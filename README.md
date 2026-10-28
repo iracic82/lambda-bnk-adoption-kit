@@ -69,8 +69,8 @@ The last challenge, **07 · How Lambda would ship this**, is the integration vie
 the Helm chart values, the rendered iRule and the BNK objects behind a live endpoint. To go straight to it:
 
 1. Start the track and wait for the sandbox to finish setting up.
-2. Press **Skip** on each challenge until you reach challenge 07. Skipping a challenge runs that
-   challenge's setup steps for you, so the endpoint used in challenge 07 is created along the way.
+2. Press **Skip** on each challenge until you reach challenge 07. Skipping a challenge completes its
+   steps automatically, so the endpoint used in challenge 07 is created along the way.
 3. In challenge 07, use the **Lambda Console** tab (Inference Gateway → Adopt), the **Topology** tab, and
    the terminal commands in the challenge text.
 
