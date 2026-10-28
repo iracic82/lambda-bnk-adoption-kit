@@ -22,13 +22,6 @@ Both contracts follow Lambda Cloud API v1.10.0 conventions: Bearer keys, `{"data
 
 ## How it works
 
-```
-Lambda console / Cloud API ──► bnk-inference-adapter ──► Kubernetes API ──► BNK controller ──► TMM
-                                (this chart)              Gateway, HTTPRoute,                    (data plane)
-                                                          InferencePool, F5EPP,
-                                                          F5BigCneIrule, NetPolicy, SecPolicy
-```
-
 - The adapter is the only new service. It needs the Kubernetes API and the BNK 2.4, Gateway API and
   Gateway API Inference Extension CRDs. It never connects to TMM.
 - Each inference endpoint gets its own Gateway and address, HTTPRoute, InferencePool with an F5 Endpoint
@@ -36,6 +29,87 @@ Lambda console / Cloud API ──► bnk-inference-adapter ──► Kubernetes 
   model schedule and metering.
 - Request path: client → TMM (iRule policies) → Endpoint Picker → GPU. The console and API are not in the
   request path. TMM calls back to Lambda only for the key check and to send usage records.
+
+## Diagrams
+
+### Architecture: control path and request path
+
+```mermaid
+flowchart TB
+    Client["Customer app · OpenAI SDK"]
+    subgraph Lambda["Lambda Cloud"]
+        direction LR
+        C["Console / Cloud API"]
+        K["Key service · /introspect"]
+        B["Billing"]
+    end
+    subgraph Cluster["BNK 2.4 cluster"]
+        A["bnk-inference-adapter · this chart"]
+        API[("Kubernetes API · Gateway API, GAIE, BNK objects")]
+        CTRL["BNK CNE controller"]
+        TMM["TMM · data plane · iRule policies"]
+        EPP["F5 Endpoint Picker · one per pool"]
+        GPU["GPU model servers · vLLM, llm-d, Dynamo"]
+    end
+    C -->|"1 · Inference and firewall API"| A
+    A -->|"2 · writes objects"| API
+    API -->|"3 · watched by"| CTRL
+    CTRL -->|"4 · programs over gRPC"| TMM
+    Client ==>|"chat request"| TMM
+    TMM ==>|"ext_proc · which GPU?"| EPP
+    TMM ==>|"forwards"| GPU
+    GPU -.->|"KV-cache events"| EPP
+    TMM -.->|"key check"| K
+    TMM -.->|"usage records"| A
+    A -.->|"usage"| B
+```
+
+### One chat request
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App as Customer app
+    participant TMM as TMM + iRule
+    participant Key as Lambda key service
+    participant G as Guardrail service
+    participant EPP as F5 Endpoint Picker
+    participant GPU as GPU (vLLM)
+    participant AD as Adapter (usage)
+    App->>TMM: POST /v1/chat/completions
+    Note over TMM: network firewall (L3/L4)
+    TMM->>Key: is this key active?
+    Key-->>TMM: active, user, role
+    TMM->>G: scan the prompt
+    G-->>TMM: allowed
+    Note over TMM: token budget and model choice
+    TMM->>EPP: ext_proc: which endpoint?
+    EPP-->>TMM: GPU with the prefix in KV cache
+    TMM->>GPU: request
+    GPU-->>TMM: answer + token usage
+    TMM-)AD: usage record (tenant, user, model, tokens, GPU)
+    TMM-->>App: answer
+```
+
+### API calls to BNK objects
+
+```mermaid
+flowchart LR
+    subgraph Create["Create endpoint"]
+        direction TB
+        GW["Gateway · own address"] --> RT["HTTPRoute · /v1"] --> IP["InferencePool · chosen instances"] --> EPPO["F5EPP · Endpoint Picker"]
+    end
+    subgraph Policies["Enable a policy"]
+        direction TB
+        IR["F5BigCneIrule · composite policy iRule"] --> NP["NetPolicy · binds iRule to the listener"]
+    end
+    subgraph Firewall["Attach a firewall"]
+        direction TB
+        FW["F5BigFwPolicy · address and port lists"] --> SP["SecPolicy · binds firewall to the Gateway"]
+    end
+    NP -.-> GW
+    SP -.-> GW
+```
 
 ## Install
 

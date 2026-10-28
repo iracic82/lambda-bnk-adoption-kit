@@ -41,6 +41,8 @@ ol.steps { margin:0; padding-left:20px; display:grid; gap:8px; color:var(--mild)
 .note { border-left:2px solid var(--accent); padding:4px 0 4px 14px; color:var(--mild); max-width:72ch; }
 footer { border-top:1px solid var(--line); padding-top:20px; font-size:13px; color:var(--muted); }
 @media (max-width:640px) { h1 { font-size:28px; } .wrap { padding:32px 16px 60px; } }
+.diagram { border:1px solid var(--line); border-radius:8px; padding:20px; background:var(--surface); overflow-x:auto; }
+.diagram pre.mermaid { background:none; border:0; padding:0; margin:0; text-align:center; font-family:inherit; }
 </style></head>
 <body><div class="wrap">
 <header>
@@ -79,6 +81,89 @@ footer { border-top:1px solid var(--line); padding-top:20px; font-size:13px; col
     <tr><td>Policies</td><td class="mono">F5BigCneIrule + NetPolicy</td><td>One iRule built from the enabled policies: API keys, guardrails, token quotas, model schedule, metering</td></tr>
     <tr><td>Firewall</td><td class="mono">F5BigFwPolicy + SecPolicy</td><td>Customer L3/L4 rules with Lambda's platform rule first; matches logged</td></tr>
   </table></div>
+</section>
+
+<section>
+  <h2>Architecture</h2>
+  <p>Numbered arrows are the control path, thick arrows are a chat request, dotted arrows are calls back to Lambda and telemetry. The console is never in the request path.</p>
+  <div class="diagram"><pre class="mermaid">
+flowchart TB
+    Client[&quot;Customer app · OpenAI SDK&quot;]
+    subgraph Lambda[&quot;Lambda Cloud&quot;]
+        direction LR
+        C[&quot;Console / Cloud API&quot;]
+        K[&quot;Key service · /introspect&quot;]
+        B[&quot;Billing&quot;]
+    end
+    subgraph Cluster[&quot;BNK 2.4 cluster&quot;]
+        A[&quot;bnk-inference-adapter · this chart&quot;]
+        API[(&quot;Kubernetes API · Gateway API, GAIE, BNK objects&quot;)]
+        CTRL[&quot;BNK CNE controller&quot;]
+        TMM[&quot;TMM · data plane · iRule policies&quot;]
+        EPP[&quot;F5 Endpoint Picker · one per pool&quot;]
+        GPU[&quot;GPU model servers · vLLM, llm-d, Dynamo&quot;]
+    end
+    C --&gt;|&quot;1 · Inference and firewall API&quot;| A
+    A --&gt;|&quot;2 · writes objects&quot;| API
+    API --&gt;|&quot;3 · watched by&quot;| CTRL
+    CTRL --&gt;|&quot;4 · programs over gRPC&quot;| TMM
+    Client ==&gt;|&quot;chat request&quot;| TMM
+    TMM ==&gt;|&quot;ext_proc · which GPU?&quot;| EPP
+    TMM ==&gt;|&quot;forwards&quot;| GPU
+    GPU -.-&gt;|&quot;KV-cache events&quot;| EPP
+    TMM -.-&gt;|&quot;key check&quot;| K
+    TMM -.-&gt;|&quot;usage records&quot;| A
+    A -.-&gt;|&quot;usage&quot;| B
+</pre></div>
+</section>
+<section>
+  <h2>One chat request</h2>
+  <p>Every policy runs in TMM in a single pass. The Endpoint Picker chooses the GPU; TMM forwards the request.</p>
+  <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant App as Customer app
+    participant TMM as TMM + iRule
+    participant Key as Lambda key service
+    participant G as Guardrail service
+    participant EPP as F5 Endpoint Picker
+    participant GPU as GPU (vLLM)
+    participant AD as Adapter (usage)
+    App-&gt;&gt;TMM: POST /v1/chat/completions
+    Note over TMM: network firewall (L3/L4)
+    TMM-&gt;&gt;Key: is this key active?
+    Key--&gt;&gt;TMM: active, user, role
+    TMM-&gt;&gt;G: scan the prompt
+    G--&gt;&gt;TMM: allowed
+    Note over TMM: token budget and model choice
+    TMM-&gt;&gt;EPP: ext_proc: which endpoint?
+    EPP--&gt;&gt;TMM: GPU with the prefix in KV cache
+    TMM-&gt;&gt;GPU: request
+    GPU--&gt;&gt;TMM: answer + token usage
+    TMM-)AD: usage record (tenant, user, model, tokens, GPU)
+    TMM--&gt;&gt;App: answer
+</pre></div>
+</section>
+<section>
+  <h2>API calls to BNK objects</h2>
+  <p>Each endpoint owns its objects, all labelled with the endpoint id, so deleting an endpoint removes exactly its objects.</p>
+  <div class="diagram"><pre class="mermaid">
+flowchart LR
+    subgraph Create[&quot;Create endpoint&quot;]
+        direction TB
+        GW[&quot;Gateway · own address&quot;] --&gt; RT[&quot;HTTPRoute · /v1&quot;] --&gt; IP[&quot;InferencePool · chosen instances&quot;] --&gt; EPPO[&quot;F5EPP · Endpoint Picker&quot;]
+    end
+    subgraph Policies[&quot;Enable a policy&quot;]
+        direction TB
+        IR[&quot;F5BigCneIrule · composite policy iRule&quot;] --&gt; NP[&quot;NetPolicy · binds iRule to the listener&quot;]
+    end
+    subgraph Firewall[&quot;Attach a firewall&quot;]
+        direction TB
+        FW[&quot;F5BigFwPolicy · address and port lists&quot;] --&gt; SP[&quot;SecPolicy · binds firewall to the Gateway&quot;]
+    end
+    NP -.-&gt; GW
+    SP -.-&gt; GW
+</pre></div>
 </section>
 
 <section>
@@ -151,4 +236,10 @@ footer { border-top:1px solid var(--line); padding-top:20px; font-size:13px; col
 </section>
 
 <footer>F5 BIG-IP Next for Kubernetes 2.4 · Gateway API Inference Extension v1 · adapter and chart 0.1.0 · Apache 2.0</footer>
-</div></body></html>
+</div><script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({ startOnLoad: true, theme: dark ? 'dark' : 'neutral', securityLevel: 'strict',
+    themeVariables: { primaryColor: dark ? '#1f1a3a' : '#ece8fd', primaryBorderColor: dark ? '#8f82ff' : '#6236f4', lineColor: dark ? '#818178' : '#636363', fontFamily: 'Inter, -apple-system, Segoe UI, Helvetica, Arial, sans-serif' } });
+</script>
+</body></html>
