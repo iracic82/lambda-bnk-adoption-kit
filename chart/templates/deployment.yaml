@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels: {app: bnk-inference-adapter, app.kubernetes.io/instance: {{ .Release.Name }}}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # SQLite on a RWO volume: one writer
+  selector:
+    matchLabels: {app: bnk-inference-adapter, app.kubernetes.io/instance: {{ .Release.Name }}}
+  template:
+    metadata:
+      labels: {app: bnk-inference-adapter, app.kubernetes.io/instance: {{ .Release.Name }}}
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Meets Pod Security "restricted", which lambda-ie warns on (deploy/lab/namespace.yaml).
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001,
+                        seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: adapter
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - {name: api, containerPort: 8080, protocol: TCP}
+            - {name: usage, containerPort: {{ .Values.service.usagePort }}, protocol: TCP}
+            - {name: fw-events, containerPort: {{ .Values.service.firewallEventsPort }}, protocol: UDP}
+          env:
+            - {name: ADAPTER_MODE, value: {{ .Values.mode | quote }}}
+            - {name: DB_PATH, value: /data/adapter.db}
+            - {name: USAGE_COLLECTOR_PORT, value: {{ .Values.service.usagePort | quote }}}
+            - {name: FIREWALL_COLLECTOR_PORT, value: {{ .Values.service.firewallEventsPort | quote }}}
+            {{- range $k, $v := .Values.config }}
+            - {name: {{ $k }}, value: {{ $v | toString | quote }}}
+            {{- end }}
+            {{- with .Values.usageFlushToken }}
+            {{- if .secretName }}
+            - name: USAGE_FLUSH_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .secretName }}, key: {{ .key }}}}
+            {{- end }}
+            {{- end }}
+            {{- range $k, $v := .Values.secretEnv }}
+            - name: {{ $k }}
+              valueFrom: {secretKeyRef: {name: {{ $v.secretName }}, key: {{ $v.key }}}}
+            {{- end }}
+          readinessProbe: {httpGet: {path: /healthz, port: api}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /healthz, port: api}, periodSeconds: 20, failureThreshold: 6}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true,
+                            capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim: {claimName: {{ .Release.Name }}-data}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: {{ .Values.service.type }}
+  selector: {app: bnk-inference-adapter, app.kubernetes.io/instance: {{ .Release.Name }}}
+  ports:
+    - {name: api, port: {{ .Values.service.apiPort }}, targetPort: api, protocol: TCP}
+    - {name: usage, port: {{ .Values.service.usagePort }}, targetPort: usage, protocol: TCP}
+    - {name: fw-events, port: {{ .Values.service.firewallEventsPort }}, targetPort: fw-events, protocol: UDP}
+{{- if .Values.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-data
+  namespace: {{ .Release.Namespace }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources: {requests: {storage: {{ .Values.persistence.size }}}}
+{{- end }}

@@ -1,0 +1,68 @@
+# Prerequisites on the target cluster: BNK 2.4 with Gateway API + GAIE CRDs, a GatewayClass whose
+# controllerName matches your CNEInstance, the endpoint namespace listed in CNEInstance.spec.eppNamespaces
+# and holding the F5 registry pull secret, and model-server pods labelled lambda.ai/instance + lambda.ai/role.
+image:
+  repository: iracic82/bnk-inference-adapter
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# live: every API call is a real Kubernetes change. mock: deterministic fixtures, no cluster access.
+mode: live
+
+config:
+  IE_NAMESPACE: lambda-ie                  # namespace for HTTPRoutes, InferencePools, F5EPPs
+  GATEWAY_NAMESPACE: f5-bnk                # namespace for Gateways, iRules, NetPolicies
+  VIP_RANGE: "172.16.201.110-172.16.201.129"
+  AUTH_INTROSPECT_URL: ""                  # your API-key introspection endpoint (called by the BNK auth iRule)
+  ADAPTER_API_KEY_INTROSPECT_URL: ""       # validates Bearer keys on the adapter's own API
+  GUARDRAIL_URL: ""                        # guardrail scan endpoint (Calypso-compatible)
+  USAGE_COLLECTOR_ADDR: ""                 # ip:port TMM can reach for usage records (TCP)
+  AUDIT_WEBHOOK_URL: ""                    # optional; unset = no audit calls
+  TMM_WATCHDOG: "0"
+  # Network firewall. Both are required before an endpoint can enable one (the API says which is missing).
+  # FIREWALL_PLATFORM_CIDRS: the sources the adapter itself reaches the VIPs from (its pod network, and the
+  # node addresses if pod egress is SNATed). Every firewall policy accepts them first, so a default-drop
+  # policy can't cut off usage flushes, the playground or the health probe. Keep it as narrow as possible:
+  # whatever is listed bypasses every customer's rules.
+  FIREWALL_PLATFORM_CIDRS: ""
+  FIREWALL_COLLECTOR_ADDR: ""              # host:port TMM sends firewall matches to (this Service, UDP 5515)
+  FIREWALL_EVENTS_DAYS: "7"                # events kept this many days ...
+  FIREWALL_EVENTS_KEEP: "100000"           # ... and at most this many
+
+# Shared secret the adapter sends with a usage flush; the metering iRule only honours flushes that carry
+# it. Must be 16-128 characters of [A-Za-z0-9_-]. Create it once, e.g.
+#   kubectl -n <ns> create secret generic bnk-adapter-usage \
+#     --from-literal=USAGE_FLUSH_TOKEN="$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40)"
+# Empty secretName: no token, and usage flushes are disabled.
+usageFlushToken:
+  secretName: ""
+  key: USAGE_FLUSH_TOKEN
+
+# Extra env from Secrets, e.g. {AUDIT_WEBHOOK_TOKEN: {secretName: x, key: y}}
+secretEnv: {}
+
+persistence:
+  enabled: true
+  size: 200Mi
+  storageClass: ""
+
+service:
+  apiPort: 8080
+  usagePort: 5514                          # usage collector (TCP from TMM); the container listens here too
+  firewallEventsPort: 5515                 # firewall event collector (syslog over UDP from TMM)
+  type: ClusterIP
+
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {memory: 2Gi}   # a benchmark round runs NVIDIA AIPerf as a subprocess (about 1.2Gi at peak)
+
+nodeSelector: {}
+tolerations: []
+
+networkPolicy:
+  enabled: true
+  tmmSelfIPs: ["10.1.20.201/32"]           # TMM internal self-IP(s) that send usage records
+  tmmPods: []                              # TMM pod selectors (namespaceSelector + podSelector); BNK 2.4 sends sidebands from the TMM pod IP
+  apiClients:                              # who may call the adapter API
+    - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: lambda-portal}}
+      podSelector: {matchLabels: {app: lambda-portal}}

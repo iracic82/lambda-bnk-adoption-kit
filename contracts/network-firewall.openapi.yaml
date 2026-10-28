@@ -1,0 +1,700 @@
+openapi: 3.1.0
+info:
+  title: Lambda Cloud API — Network firewall (F5 BIG-IP) extension
+  version: 0.1.0
+  license: {name: Apache-2.0, identifier: Apache-2.0}
+  description: |
+    Proposed extension to the Lambda Cloud API v1.10.0, in the same conventions as the Inference Gateway
+    extension: every success is `{"data": <PAYLOAD>}`, every failure is
+    `{"error": {"code", "message", "suggestion"?}}`, and authentication is `Authorization: Bearer <api_key>`.
+
+    A network firewall policy is an ordered list of rules enforced by F5 BIG-IP Next for Kubernetes (TMM) on
+    an inference endpoint's addresses, before any request reaches the gateway policies, a GPU or a frontier
+    model. Rules match on protocol, source address and destination port; the first match decides. Every
+    policy starts with a locked platform rule that keeps Lambda's own control traffic (usage collection,
+    health checks) working, and ends with the policy's default action.
+
+    These resources are separate from Lambda's instance firewall (`/api/v1/firewall-rulesets`), which is
+    unchanged.
+servers:
+  - url: https://cloud.lambda.ai
+security:
+  - bearerAuth: []
+  - basicAuth: []
+tags:
+  - name: Network firewall
+    description: F5 network firewall policies, address and port lists, log destinations and events.
+paths:
+  /api/v1/network-firewall-policies:
+    get:
+      tags: [Network firewall]
+      operationId: listNetworkFirewallPolicies
+      summary: List network firewall policies
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: "#/components/schemas/FirewallPolicy"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      tags: [Network firewall]
+      operationId: createNetworkFirewallPolicy
+      summary: Create a network firewall policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/FirewallPolicyCreate"}
+      responses:
+        "200": {$ref: "#/components/responses/PolicyOk"}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Duplicate"}
+  /api/v1/network-firewall-policies/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get:
+      tags: [Network firewall]
+      operationId: getNetworkFirewallPolicy
+      summary: Get a network firewall policy
+      responses:
+        "200": {$ref: "#/components/responses/PolicyOk"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    patch:
+      tags: [Network firewall]
+      operationId: updateNetworkFirewallPolicy
+      summary: Update a network firewall policy
+      description: >-
+        Replaces the fields given. A policy attached to endpoints is re-applied to all of them; its status is
+        `applying` until BNK has taken the change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/FirewallPolicyUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/PolicyOk"}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Duplicate"}
+    delete:
+      tags: [Network firewall]
+      operationId: deleteNetworkFirewallPolicy
+      summary: Delete a network firewall policy
+      responses:
+        "200": {$ref: "#/components/responses/Deleted"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/InUse"}
+  /api/v1/network-firewall-policies/{id}/rule-hits:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get:
+      tags: [Network firewall]
+      operationId: getNetworkFirewallRuleHits
+      summary: Matches per rule over the last 24 hours
+      description: Counted from logged matches, so rules with logging off always show zero.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [rule, action, hits, last_hit]
+                      properties:
+                        rule: {type: string}
+                        action: {$ref: "#/components/schemas/RuleAction"}
+                        hits: {type: integer, minimum: 0}
+                        last_hit: {type: [string, "null"], format: date-time}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /api/v1/network-firewall-address-lists:
+    get:
+      tags: [Network firewall]
+      operationId: listNetworkFirewallAddressLists
+      summary: List address lists
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: "#/components/schemas/AddressList"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      tags: [Network firewall]
+      operationId: createNetworkFirewallAddressList
+      summary: Create an address list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AddressListWrite"}
+      responses:
+        "200": {$ref: "#/components/responses/AddressListOk"}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Duplicate"}
+  /api/v1/network-firewall-address-lists/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get:
+      tags: [Network firewall]
+      operationId: getNetworkFirewallAddressList
+      summary: Get an address list
+      responses:
+        "200": {$ref: "#/components/responses/AddressListOk"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    patch:
+      tags: [Network firewall]
+      operationId: updateNetworkFirewallAddressList
+      summary: Update an address list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AddressListUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/AddressListOk"}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Duplicate"}
+    delete:
+      tags: [Network firewall]
+      operationId: deleteNetworkFirewallAddressList
+      summary: Delete an address list
+      responses:
+        "200": {$ref: "#/components/responses/Deleted"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/InUse"}
+  /api/v1/network-firewall-port-lists:
+    get:
+      tags: [Network firewall]
+      operationId: listNetworkFirewallPortLists
+      summary: List port lists
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: "#/components/schemas/PortList"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      tags: [Network firewall]
+      operationId: createNetworkFirewallPortList
+      summary: Create a port list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PortListWrite"}
+      responses:
+        "200": {$ref: "#/components/responses/PortListOk"}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Duplicate"}
+  /api/v1/network-firewall-port-lists/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get:
+      tags: [Network firewall]
+      operationId: getNetworkFirewallPortList
+      summary: Get a port list
+      responses:
+        "200": {$ref: "#/components/responses/PortListOk"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    patch:
+      tags: [Network firewall]
+      operationId: updateNetworkFirewallPortList
+      summary: Update a port list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PortListUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/PortListOk"}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Duplicate"}
+    delete:
+      tags: [Network firewall]
+      operationId: deleteNetworkFirewallPortList
+      summary: Delete a port list
+      responses:
+        "200": {$ref: "#/components/responses/Deleted"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/InUse"}
+  /api/v1/network-firewall-log-destinations:
+    get:
+      tags: [Network firewall]
+      operationId: listNetworkFirewallLogDestinations
+      summary: List log destinations
+      description: Extra copies of every logged match, sent as RFC 5424 syslog (e.g. to the customer's SIEM).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: "#/components/schemas/LogDestination"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      tags: [Network firewall]
+      operationId: createNetworkFirewallLogDestination
+      summary: Add a log destination
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LogDestinationWrite"}
+      responses:
+        "200": {$ref: "#/components/responses/LogDestinationOk"}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Duplicate"}
+  /api/v1/network-firewall-log-destinations/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get:
+      tags: [Network firewall]
+      operationId: getNetworkFirewallLogDestination
+      summary: Get a log destination
+      responses:
+        "200": {$ref: "#/components/responses/LogDestinationOk"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      tags: [Network firewall]
+      operationId: deleteNetworkFirewallLogDestination
+      summary: Remove a log destination
+      responses:
+        "200": {$ref: "#/components/responses/Deleted"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /api/v1/network-firewall-events:
+    get:
+      tags: [Network firewall]
+      operationId: listNetworkFirewallEvents
+      summary: Logged firewall matches, newest first
+      description: >-
+        One event per connection: TCP retries of the same connection to the same rule within 60 seconds are
+        folded into one event with an `attempts` count.
+      parameters:
+        - {name: endpoint_id, in: query, schema: {type: string}}
+        - {name: policy_id, in: query, schema: {type: string}}
+        - {name: action, in: query, schema: {$ref: "#/components/schemas/RuleAction"}}
+        - {name: since, in: query, schema: {type: string, format: date-time}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 1000, default: 100}}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: "#/components/schemas/FirewallEvent"}}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, description: "`Authorization: Bearer <api_key>`"}
+    basicAuth: {type: http, scheme: basic, description: "`Authorization: Basic <api_key>`"}
+  schemas:
+    Name:
+      type: string
+      pattern: "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$"
+      description: Lowercase letters, digits and hyphens, 1-40 characters, unique per resource type.
+      examples: [office-only]
+    Cidr:
+      type: string
+      maxLength: 49
+      description: An IPv4 or IPv6 address or network in CIDR notation; a bare address means one host.
+      examples: ["203.0.113.0/24", "2001:db8::/32", "198.51.100.7"]
+    PortRange:
+      type: string
+      pattern: "^[0-9]{1,5}(-[0-9]{1,5})?$"
+      description: A port (1-65535) or an inclusive range `low-high`.
+      examples: ["8000", "8000-8002"]
+    RuleAction:
+      type: string
+      enum: [accept, accept_decisively, drop, reject]
+      description: >-
+        accept: allow the connection. accept_decisively: allow it and skip any later firewall stage. drop: discard
+        silently (the client times out). reject: refuse at once (TCP reset).
+    DefaultAction:
+      type: string
+      enum: [accept, drop, reject]
+    Protocol:
+      type: string
+      enum: [any, tcp, udp, icmp]
+    ResourceStatus:
+      type: string
+      enum: [applying, ready, error]
+      description: Whether BNK has taken the latest version of the object.
+    FirewallRule:
+      type: object
+      additionalProperties: false
+      required: [name, action]
+      properties:
+        name: {$ref: "#/components/schemas/Name"}
+        description: {type: string, maxLength: 200}
+        action: {$ref: "#/components/schemas/RuleAction"}
+        protocol: {$ref: "#/components/schemas/Protocol", default: any}
+        source:
+          type: object
+          additionalProperties: false
+          description: Empty matches any source.
+          properties:
+            cidrs: {type: array, maxItems: 100, items: {$ref: "#/components/schemas/Cidr"}}
+            address_list_ids: {type: array, maxItems: 10, items: {type: string}}
+        destination:
+          type: object
+          additionalProperties: false
+          description: Empty matches any port on the endpoint's addresses.
+          properties:
+            ports: {type: array, maxItems: 50, items: {$ref: "#/components/schemas/PortRange"}}
+            port_list_ids: {type: array, maxItems: 10, items: {type: string}}
+        logging: {type: boolean, default: true}
+    PlatformRule:
+      type: object
+      additionalProperties: false
+      required: [name, action, source_cidrs, locked]
+      description: The first rule of every policy, added by Lambda so its own control traffic keeps working.
+      properties:
+        name: {const: lambda-platform}
+        action: {const: accept_decisively}
+        source_cidrs: {type: array, items: {$ref: "#/components/schemas/Cidr"}}
+        locked: {const: true}
+    FirewallPolicy:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, platform_rule, rules, default_action, endpoint_ids, status, status_reason, created, updated]
+      properties:
+        id: {type: string, examples: ["fw-3f9a1c0b7d2e"]}
+        name: {$ref: "#/components/schemas/Name"}
+        description: {type: string, maxLength: 200}
+        platform_rule: {$ref: "#/components/schemas/PlatformRule"}
+        rules: {type: array, maxItems: 200, items: {$ref: "#/components/schemas/FirewallRule"}}
+        default_action: {$ref: "#/components/schemas/DefaultAction"}
+        endpoint_ids: {type: array, items: {type: string}, description: Inference endpoints this policy is attached to.}
+        status: {$ref: "#/components/schemas/ResourceStatus"}
+        status_reason: {type: [string, "null"]}
+        created: {type: string, format: date-time}
+        updated: {type: string, format: date-time}
+    FirewallPolicyCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {$ref: "#/components/schemas/Name"}
+        description: {type: string, maxLength: 200, default: ""}
+        rules: {type: array, maxItems: 200, items: {$ref: "#/components/schemas/FirewallRule"}, default: []}
+        default_action: {$ref: "#/components/schemas/DefaultAction", default: accept}
+    FirewallPolicyUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: {$ref: "#/components/schemas/Name"}
+        description: {type: string, maxLength: 200}
+        rules: {type: array, maxItems: 200, items: {$ref: "#/components/schemas/FirewallRule"}}
+        default_action: {$ref: "#/components/schemas/DefaultAction"}
+    AddressList:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, cidrs, policy_ids, status, status_reason, created, updated]
+      properties:
+        id: {type: string, examples: ["al-1b2c3d4e5f60"]}
+        name: {$ref: "#/components/schemas/Name"}
+        description: {type: string, maxLength: 200}
+        cidrs: {type: array, maxItems: 1000, items: {$ref: "#/components/schemas/Cidr"}}
+        policy_ids: {type: array, items: {type: string}, description: Policies that reference this list.}
+        status: {$ref: "#/components/schemas/ResourceStatus"}
+        status_reason: {type: [string, "null"]}
+        created: {type: string, format: date-time}
+        updated: {type: string, format: date-time}
+    AddressListWrite:
+      type: object
+      additionalProperties: false
+      required: [name, cidrs]
+      properties:
+        name: {$ref: "#/components/schemas/Name"}
+        description: {type: string, maxLength: 200, default: ""}
+        cidrs: {type: array, minItems: 1, maxItems: 1000, items: {$ref: "#/components/schemas/Cidr"}}
+    AddressListUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: {$ref: "#/components/schemas/Name"}
+        description: {type: string, maxLength: 200}
+        cidrs: {type: array, minItems: 1, maxItems: 1000, items: {$ref: "#/components/schemas/Cidr"}}
+    PortList:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, ports, policy_ids, status, status_reason, created, updated]
+      properties:
+        id: {type: string, examples: ["pl-1b2c3d4e5f60"]}
+        name: {$ref: "#/components/schemas/Name"}
+        description: {type: string, maxLength: 200}
+        ports: {type: array, maxItems: 200, items: {$ref: "#/components/schemas/PortRange"}}
+        policy_ids: {type: array, items: {type: string}}
+        status: {$ref: "#/components/schemas/ResourceStatus"}
+        status_reason: {type: [string, "null"]}
+        created: {type: string, format: date-time}
+        updated: {type: string, format: date-time}
+    PortListWrite:
+      type: object
+      additionalProperties: false
+      required: [name, ports]
+      properties:
+        name: {$ref: "#/components/schemas/Name"}
+        description: {type: string, maxLength: 200, default: ""}
+        ports: {type: array, minItems: 1, maxItems: 200, items: {$ref: "#/components/schemas/PortRange"}}
+    PortListUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: {$ref: "#/components/schemas/Name"}
+        description: {type: string, maxLength: 200}
+        ports: {type: array, minItems: 1, maxItems: 200, items: {$ref: "#/components/schemas/PortRange"}}
+    LogDestination:
+      type: object
+      additionalProperties: false
+      required: [id, name, host, port, protocol, status, status_reason, created]
+      properties:
+        id: {type: string, examples: ["ld-1b2c3d4e5f60"]}
+        name: {$ref: "#/components/schemas/Name"}
+        host: {type: string, description: IPv4 or IPv6 address reachable from the BNK data plane.}
+        port: {type: integer, minimum: 1, maximum: 65535}
+        protocol: {type: string, enum: [udp, tcp]}
+        status: {$ref: "#/components/schemas/ResourceStatus"}
+        status_reason: {type: [string, "null"]}
+        created: {type: string, format: date-time}
+    LogDestinationWrite:
+      type: object
+      additionalProperties: false
+      required: [name, host, port]
+      properties:
+        name: {$ref: "#/components/schemas/Name"}
+        host: {type: string, maxLength: 39}
+        port: {type: integer, minimum: 1, maximum: 65535}
+        protocol: {type: string, enum: [udp, tcp], default: udp}
+    FirewallEvent:
+      type: object
+      additionalProperties: false
+      required: [id, at, endpoint_id, policy_id, rule, action, reason, source_ip, source_port, protocol, dest_ip, dest_port, attempts]
+      properties:
+        id: {type: integer}
+        at: {type: string, format: date-time, description: Time of the first attempt.}
+        endpoint_id: {type: [string, "null"]}
+        policy_id: {type: [string, "null"]}
+        rule: {type: string, description: "Rule name as the customer wrote it, or lambda-platform / default."}
+        action: {$ref: "#/components/schemas/RuleAction"}
+        reason: {type: [string, "null"], description: Why it was dropped or rejected, as BNK reports it.}
+        source_ip: {type: string}
+        source_port: {type: integer}
+        protocol: {type: string}
+        dest_ip: {type: string}
+        dest_port: {type: integer}
+        attempts: {type: integer, minimum: 1}
+    NetworkFirewallConfig:
+      type: object
+      additionalProperties: false
+      required: [firewall_policy_id]
+      description: >-
+        Config for the inference endpoint policy kind `network_firewall` (PATCH
+        /api/v1/inference-endpoints/{id}/policies/network_firewall). Attaches the policy to all of the
+        endpoint's addresses.
+      properties:
+        firewall_policy_id: {type: string}
+        logging: {type: boolean, default: true, description: Send this endpoint's matches to the event log and log destinations.}
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        suggestion: {type: string}
+        request_id: {type: string}
+  responses:
+    PolicyOk:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [data]
+            properties:
+              data: {$ref: "#/components/schemas/FirewallPolicy"}
+    AddressListOk:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [data]
+            properties:
+              data: {$ref: "#/components/schemas/AddressList"}
+    PortListOk:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [data]
+            properties:
+              data: {$ref: "#/components/schemas/PortList"}
+    LogDestinationOk:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [data]
+            properties:
+              data: {$ref: "#/components/schemas/LogDestination"}
+    Deleted:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [data]
+            properties:
+              data:
+                type: object
+                additionalProperties: false
+                required: [id, deleted]
+                properties:
+                  id: {type: string}
+                  deleted: {const: true}
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: global/invalid-api-key}}
+    Forbidden:
+      description: Forbidden (the key is valid but its user is not an admin)
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: global/forbidden}}
+    InvalidParameters:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: global/invalid-parameters}}
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: global/object-does-not-exist}}
+    Duplicate:
+      description: Conflict (the name is taken)
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: global/duplicate}}
+    InUse:
+      description: Conflict (attached to an endpoint or referenced by a policy)
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: network-firewall/in-use}}

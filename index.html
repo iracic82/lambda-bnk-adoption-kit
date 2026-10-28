@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lambda Inference Gateway Adoption Kit</title>
+<meta name="description" content="API contracts, Helm chart and BNK object model for the Lambda Inference Gateway on F5 BIG-IP Next for Kubernetes 2.4.">
+<style>
+:root { --bg:#f8f7ee; --surface:#f0efe6; --fg:#0b0b0b; --mild:#2e2e2e; --muted:#636363; --line:#d7d6ce; --accent:#6236f4; --ok:#0f7b0f; --warn:#8a6100; --bad:#bc0000; --code:#ecebe2; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0b0b0b; --surface:#121212; --fg:#f0efe2; --mild:#bfbeb4; --muted:#818178; --line:#2e2e2e; --accent:#8f82ff; --ok:#3fd13e; --warn:#e2c044; --bad:#ff6742; --code:#1b1b1b; color-scheme:dark; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 Inter, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+.wrap { max-width:1040px; margin:0 auto; padding:48px 24px 80px; display:grid; gap:44px; }
+header { display:grid; gap:12px; border-bottom:1px solid var(--line); padding-bottom:32px; }
+.eyebrow { font:12px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+h1 { font-size:38px; line-height:1.15; font-weight:500; letter-spacing:-.02em; margin:0; text-wrap:balance; }
+h2 { font-size:22px; font-weight:500; margin:0 0 6px; letter-spacing:-.01em; }
+h3 { font-size:15px; font-weight:600; margin:0 0 4px; }
+p { margin:0; color:var(--mild); max-width:72ch; }
+.lede { font-size:18px; color:var(--mild); max-width:66ch; }
+section { display:grid; gap:14px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:14px; }
+.card { border:1px solid var(--line); border-radius:8px; padding:16px; background:var(--surface); display:grid; gap:6px; align-content:start; min-width:0; }
+.card a { font-size:13px; }
+a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+.mono, code, pre { font-family:ui-monospace, "SF Mono", Menlo, monospace; }
+code { font-size:.9em; background:var(--code); padding:1px 5px; border-radius:3px; }
+pre { margin:0; background:var(--code); border:1px solid var(--line); border-radius:6px; padding:14px 16px; font-size:13px; line-height:1.55; overflow-x:auto; }
+.tablewrap { overflow-x:auto; border:1px solid var(--line); border-radius:8px; }
+table { width:100%; border-collapse:collapse; font-size:13.5px; }
+th { text-align:left; font-weight:500; color:var(--muted); font-size:12px; padding:9px 12px; border-bottom:1px solid var(--line); background:var(--surface); }
+td { padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:top; color:var(--mild); }
+tr:last-child td { border-bottom:0; }
+td.mono { color:var(--fg); font-size:12.5px; white-space:nowrap; }
+.verb { font:600 11px/1 ui-monospace, Menlo, monospace; padding:3px 6px; border-radius:3px; border:1px solid currentColor; }
+.v-get { color:var(--ok); } .v-post { color:var(--accent); } .v-patch { color:var(--warn); } .v-delete { color:var(--bad); }
+.flow { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.flow div { padding:14px; border-right:1px solid var(--line); display:grid; gap:4px; min-width:0; }
+.flow div:last-child { border-right:0; }
+.flow .k { font:11px ui-monospace, Menlo, monospace; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+.flow b { font-weight:600; } .flow span:last-child { font-size:13px; color:var(--muted); }
+.flow .hot { background:color-mix(in srgb, var(--accent) 8%, var(--bg)); } .flow .hot b { color:var(--accent); }
+ol.steps { margin:0; padding-left:20px; display:grid; gap:8px; color:var(--mild); max-width:72ch; }
+.note { border-left:2px solid var(--accent); padding:4px 0 4px 14px; color:var(--mild); max-width:72ch; }
+footer { border-top:1px solid var(--line); padding-top:20px; font-size:13px; color:var(--muted); }
+@media (max-width:640px) { h1 { font-size:28px; } .wrap { padding:32px 16px 60px; } }
+</style></head>
+<body><div class="wrap">
+<header>
+  <div class="eyebrow">Lambda Cloud × F5 BIG-IP Next for Kubernetes 2.4</div>
+  <h1>Inference Gateway adoption kit</h1>
+  <p class="lede">API contracts, the Helm chart and the Kubernetes object model for running the Inference Gateway next to the Lambda Cloud backend. Written for the platform engineers who would integrate it.</p>
+</header>
+
+<section>
+  <h2>Contents</h2>
+  <div class="grid">
+    <div class="card"><h3>Inference Gateway API</h3><p>OpenAPI 3.1. Endpoints, policies, usage, utilization, benchmarks.</p><a href="contracts/inference-gateway.openapi.yaml">contracts/inference-gateway.openapi.yaml</a></div>
+    <div class="card"><h3>Network firewall API</h3><p>OpenAPI 3.1. Policies, address and port lists, log destinations, events.</p><a href="contracts/network-firewall.openapi.yaml">contracts/network-firewall.openapi.yaml</a></div>
+    <div class="card"><h3>Helm chart</h3><p><code>bnk-inference-adapter</code>, the service that implements both APIs.</p><a href="chart/values.yaml">chart/values.yaml</a></div>
+    <div class="card"><h3>BNK object model</h3><p>The objects created for each endpoint and policy.</p><a href="docs/bnk-objects.md">docs/bnk-objects.md</a></div>
+    <div class="card"><h3>API walkthrough</h3><p>The complete flow with <code>curl</code> only.</p><a href="docs/api-walkthrough.sh">docs/api-walkthrough.sh</a></div>
+    <div class="card"><h3>Topology</h3><p>Interactive view of the reference lab.</p><a href="docs/topology.html">docs/topology.html</a></div>
+  </div>
+</section>
+
+<section>
+  <h2>How it works</h2>
+  <p>The adapter is the only new service. It translates API calls into Kubernetes objects; the BNK controller programs TMM. The console and API are not in the request path.</p>
+  <div class="flow">
+    <div><span class="k">Control</span><b>Console / Cloud API</b><span>create, change, delete</span></div>
+    <div class="hot"><span class="k">New</span><b>bnk-inference-adapter</b><span>this chart</span></div>
+    <div><span class="k">Kubernetes</span><b>Gateway API + GAIE + BNK CRDs</b><span>per endpoint, labelled</span></div>
+    <div><span class="k">BNK</span><b>CNE controller</b><span>compiles, pushes over gRPC</span></div>
+    <div class="hot"><span class="k">Data plane</span><b>TMM</b><span>iRule policies, Endpoint Picker, GPU</span></div>
+  </div>
+  <div class="tablewrap"><table>
+    <tr><th>Per endpoint</th><th>Object</th><th>Purpose</th></tr>
+    <tr><td>Address</td><td class="mono">Gateway</td><td>One address and listener per endpoint</td></tr>
+    <tr><td>Routing</td><td class="mono">HTTPRoute</td><td>Sends <code>/v1</code> to the endpoint's pool</td></tr>
+    <tr><td>GPU choice</td><td class="mono">InferencePool + F5EPP</td><td>F5 Endpoint Picker: KV-cache and load aware, one per pool</td></tr>
+    <tr><td>Policies</td><td class="mono">F5BigCneIrule + NetPolicy</td><td>One iRule built from the enabled policies: API keys, guardrails, token quotas, model schedule, metering</td></tr>
+    <tr><td>Firewall</td><td class="mono">F5BigFwPolicy + SecPolicy</td><td>Customer L3/L4 rules with Lambda's platform rule first; matches logged</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>Inference Gateway API</h2>
+  <div class="tablewrap"><table><tr><th>Method</th><th>Path</th><th>Summary</th></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/inference-endpoints</td><td>List inference endpoints</td></tr>
+<tr><td><span class="verb v-post">POST</span></td><td class="mono">/api/v1/inference-endpoints</td><td>Create an inference endpoint over instances</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/inference-endpoints/{id}</td><td>Retrieve inference endpoint details</td></tr>
+<tr><td><span class="verb v-post">POST</span></td><td class="mono">/api/v1/inference-endpoints/{id}</td><td>Update inference endpoint details (name, instances)</td></tr>
+<tr><td><span class="verb v-delete">DELETE</span></td><td class="mono">/api/v1/inference-endpoints/{id}</td><td>Delete an inference endpoint</td></tr>
+<tr><td><span class="verb v-patch">PATCH</span></td><td class="mono">/api/v1/inference-endpoints/{id}/policies/{kind}</td><td>Enable, disable or configure one policy</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/inference-endpoints/{id}/usage</td><td>Token usage per user and model</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/inference-endpoints/{id}/utilization</td><td>GPU utilization per instance</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/inference-endpoints/{id}/benchmarks</td><td>List benchmark runs (latest first)</td></tr>
+<tr><td><span class="verb v-post">POST</span></td><td class="mono">/api/v1/inference-endpoint-operations/benchmark</td><td>Run the round-robin vs cache-aware benchmark</td></tr>
+<tr><td><span class="verb v-post">POST</span></td><td class="mono">/api/v1/inference-endpoint-operations/reset-usage</td><td>Reset token usage counters and quotas for an endpoint</td></tr>
+<tr><td><span class="verb v-post">POST</span></td><td class="mono">/api/v1/inference-endpoint-operations/chat</td><td>Playground · send one chat request through the endpoint address and report what BNK did</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/inference-gateway/status</td><td>Adapter mode and data-plane health</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>Network firewall API</h2>
+  <div class="tablewrap"><table><tr><th>Method</th><th>Path</th><th>Summary</th></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/network-firewall-policies</td><td>List network firewall policies</td></tr>
+<tr><td><span class="verb v-post">POST</span></td><td class="mono">/api/v1/network-firewall-policies</td><td>Create a network firewall policy</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/network-firewall-policies/{id}</td><td>Get a network firewall policy</td></tr>
+<tr><td><span class="verb v-patch">PATCH</span></td><td class="mono">/api/v1/network-firewall-policies/{id}</td><td>Update a network firewall policy</td></tr>
+<tr><td><span class="verb v-delete">DELETE</span></td><td class="mono">/api/v1/network-firewall-policies/{id}</td><td>Delete a network firewall policy</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/network-firewall-policies/{id}/rule-hits</td><td>Matches per rule over the last 24 hours</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/network-firewall-address-lists</td><td>List address lists</td></tr>
+<tr><td><span class="verb v-post">POST</span></td><td class="mono">/api/v1/network-firewall-address-lists</td><td>Create an address list</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/network-firewall-address-lists/{id}</td><td>Get an address list</td></tr>
+<tr><td><span class="verb v-patch">PATCH</span></td><td class="mono">/api/v1/network-firewall-address-lists/{id}</td><td>Update an address list</td></tr>
+<tr><td><span class="verb v-delete">DELETE</span></td><td class="mono">/api/v1/network-firewall-address-lists/{id}</td><td>Delete an address list</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/network-firewall-port-lists</td><td>List port lists</td></tr>
+<tr><td><span class="verb v-post">POST</span></td><td class="mono">/api/v1/network-firewall-port-lists</td><td>Create a port list</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/network-firewall-port-lists/{id}</td><td>Get a port list</td></tr>
+<tr><td><span class="verb v-patch">PATCH</span></td><td class="mono">/api/v1/network-firewall-port-lists/{id}</td><td>Update a port list</td></tr>
+<tr><td><span class="verb v-delete">DELETE</span></td><td class="mono">/api/v1/network-firewall-port-lists/{id}</td><td>Delete a port list</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/network-firewall-log-destinations</td><td>List log destinations</td></tr>
+<tr><td><span class="verb v-post">POST</span></td><td class="mono">/api/v1/network-firewall-log-destinations</td><td>Add a log destination</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/network-firewall-log-destinations/{id}</td><td>Get a log destination</td></tr>
+<tr><td><span class="verb v-delete">DELETE</span></td><td class="mono">/api/v1/network-firewall-log-destinations/{id}</td><td>Remove a log destination</td></tr>
+<tr><td><span class="verb v-get">GET</span></td><td class="mono">/api/v1/network-firewall-events</td><td>Logged firewall matches, newest first</td></tr>
+  </table></div>
+  <p>Both contracts follow Lambda Cloud API v1.10.0 conventions: Bearer keys, <code>{"data": ...}</code> and <code>{"error": {...}}</code> envelopes, and <code>-operations</code> paths for actions.</p>
+</section>
+
+<section>
+  <h2>Install</h2>
+  <p>Prerequisites: BNK 2.4 with the Gateway API and Inference Extension CRDs; the endpoint namespace listed in <code>CNEInstance.spec.eppNamespaces</code> and holding the F5 registry pull secret; model-server pods labelled <code>lambda.ai/instance</code> and <code>lambda.ai/role</code>.</p>
+<pre>helm install bnk-inference-adapter ./chart -n lambda-ie \
+  --set config.AUTH_INTROSPECT_URL=http://&lt;your key service&gt;/introspect \
+  --set config.USAGE_COLLECTOR_ADDR=&lt;adapter service ip&gt;:5514</pre>
+  <p>The key service has a single contract:</p>
+<pre>POST /introspect  {"token": "&lt;key&gt;"}
+→ 200 {"active": true, "sub": "&lt;user&gt;", "role": "admin"|"member"}   or   200 {"active": false}</pre>
+</section>
+
+<section>
+  <h2>See it running in the lab</h2>
+  <p>The reference lab runs this integration on a live BNK 2.4 cluster with NVIDIA GPUs and a replica of the Lambda console. The final challenge, <b>07 · How Lambda would ship this</b>, is the integration view: contracts, chart values, the generated iRule and the BNK objects behind a live endpoint.</p>
+  <ol class="steps">
+    <li>Start the track and wait until the sandbox has finished setting up.</li>
+    <li>Select <b>Skip</b> on each challenge until you reach challenge 07. Skipping runs each challenge's setup for you, so the endpoint used in challenge 07 is created along the way.</li>
+    <li>In challenge 07, use the <b>Lambda Console</b> tab (Inference Gateway → Adopt), the <b>Topology</b> tab and the terminal commands in the challenge text.</li>
+  </ol>
+  <p class="note">If no GPU is available when the sandbox starts, the lab uses clearly labelled simulated instances. Challenge 07 covers the integration, so it works the same either way.</p>
+</section>
+
+<footer>F5 BIG-IP Next for Kubernetes 2.4 · Gateway API Inference Extension v1 · adapter and chart 0.1.0 · Apache 2.0</footer>
+</div></body></html>

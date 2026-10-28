@@ -1,0 +1,730 @@
+openapi: 3.1.0
+info:
+  title: Lambda Cloud API — Inference Gateway extension (powered by F5 BIG-IP Next for Kubernetes)
+  version: 0.1.0
+  license: {name: Apache-2.0, identifier: Apache-2.0}
+  description: |
+    Proposed extension to the Lambda Cloud API v1.10.0. It follows the same conventions:
+    every success is `{"data": <PAYLOAD>}`, every failure is
+    `{"error": {"code", "message", "suggestion"?, "request_id"?}}`, authentication is
+    `Authorization: Bearer <api_key>` (or Basic), resources are nouns under `/api/v1/`, and actions
+    that are not plain CRUD live under `/api/v1/<resource>-operations/<verb>`.
+
+    An inference endpoint is a single network address that serves OpenAI-compatible chat
+    completions from a set of the customer's instances, with BNK enforcing the enabled policies in
+    the data path in this order: api_auth → guardrails → token_quota → ai_load_balancing.
+servers:
+  - url: https://cloud.lambda.ai
+security:
+  - bearerAuth: []
+  - basicAuth: []
+tags:
+  - name: Inference Gateway
+    description: Inference endpoints in front of the customer's instances, with BNK policies in the data path.
+paths:
+  /api/v1/inference-endpoints:
+    get:
+      tags: [Inference Gateway]
+      operationId: listInferenceEndpoints
+      summary: List inference endpoints
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: "#/components/schemas/InferenceEndpoint"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      tags: [Inference Gateway]
+      operationId: createInferenceEndpoint
+      summary: Create an inference endpoint over instances
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InferenceEndpointCreate"}
+      responses:
+        "200":
+          description: Accepted; status starts as provisioning
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {$ref: "#/components/schemas/InferenceEndpoint"}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/InstanceNotFound"}
+        "409": {$ref: "#/components/responses/Duplicate"}
+  /api/v1/inference-endpoints/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, pattern: "^ie-[0-9a-f]{12}$"}}
+    get:
+      tags: [Inference Gateway]
+      operationId: getInferenceEndpoint
+      summary: Retrieve inference endpoint details
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {$ref: "#/components/schemas/InferenceEndpoint"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/EndpointNotFound"}
+    post:
+      tags: [Inference Gateway]
+      operationId: updateInferenceEndpoint
+      summary: Update inference endpoint details (name, instances)
+      description: Same verb Lambda uses for "Update instance details".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InferenceEndpointUpdate"}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {$ref: "#/components/schemas/InferenceEndpoint"}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/EndpointNotFound"}
+    delete:
+      tags: [Inference Gateway]
+      operationId: deleteInferenceEndpoint
+      summary: Delete an inference endpoint
+      responses:
+        "200":
+          description: Deletion started; status becomes deleting
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {$ref: "#/components/schemas/InferenceEndpoint"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/EndpointNotFound"}
+  /api/v1/inference-endpoints/{id}/policies/{kind}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      - {name: kind, in: path, required: true, schema: {$ref: "#/components/schemas/PolicyKind"}}
+    patch:
+      tags: [Inference Gateway]
+      operationId: updateInferenceEndpointPolicy
+      summary: Enable, disable or configure one policy
+      description: Same verb Lambda uses for "Update firewall ruleset". Returns the policy with status `applying` until BNK has accepted the change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PolicyUpdate"}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {$ref: "#/components/schemas/Policy"}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/EndpointNotFound"}
+  /api/v1/inference-endpoints/{id}/usage:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      - {name: since, in: query, required: false, schema: {type: string, format: date-time}}
+      - {name: group_by, in: query, required: false, schema: {type: string, enum: [user, model, user_model], default: user_model}}
+    get:
+      tags: [Inference Gateway]
+      operationId: getInferenceEndpointUsage
+      summary: Token usage per user and model
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {$ref: "#/components/schemas/UsageSummary"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/EndpointNotFound"}
+  /api/v1/inference-endpoints/{id}/utilization:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get:
+      tags: [Inference Gateway]
+      operationId: getInferenceEndpointUtilization
+      summary: GPU utilization per instance
+      description: Read live from each model server's vLLM metrics. Throughput is the rate since the previous call, so the first call returns null for it.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {$ref: "#/components/schemas/Utilization"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/EndpointNotFound"}
+  /api/v1/inference-endpoints/{id}/benchmarks:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get:
+      tags: [Inference Gateway]
+      operationId: listInferenceEndpointBenchmarks
+      summary: List benchmark runs (latest first)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: "#/components/schemas/BenchmarkRun"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/EndpointNotFound"}
+  /api/v1/inference-endpoint-operations/benchmark:
+    post:
+      tags: [Inference Gateway]
+      operationId: benchmarkInferenceEndpoint
+      summary: Run the round-robin vs cache-aware benchmark
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [endpoint_id]
+              properties:
+                endpoint_id: {type: string}
+                workload: {$ref: "#/components/schemas/BenchmarkWorkload"}
+      responses:
+        "200":
+          description: Started
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {$ref: "#/components/schemas/BenchmarkRun"}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/EndpointNotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /api/v1/inference-endpoint-operations/reset-usage:
+    post:
+      tags: [Inference Gateway]
+      operationId: resetInferenceEndpointUsage
+      summary: Reset token usage counters and quotas for an endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [endpoint_id]
+              properties:
+                endpoint_id: {type: string}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/EmptyResponse"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/EndpointNotFound"}
+  /api/v1/inference-endpoint-operations/chat:
+    post:
+      tags: [Inference Gateway]
+      operationId: chatThroughInferenceEndpoint
+      summary: Playground — send one chat request through the endpoint address and report what BNK did
+      description: |
+        Sends an OpenAI chat completion to the endpoint's real address (never directly to an
+        instance) using the given API key, and returns the model response plus the gateway's
+        decisions read from the response headers and the usage record.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [endpoint_id, messages]
+              properties:
+                endpoint_id: {type: string}
+                api_key: {type: [string, "null"], description: Key to present to the endpoint; null sends no Authorization header}
+                user: {type: [string, "null"], description: "OpenAI `user` field, used for metering when api_auth is off"}
+                model: {type: [string, "null"]}
+                messages:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [role, content]
+                    properties:
+                      role: {type: string, enum: [system, user, assistant]}
+                      content: {type: string}
+                max_tokens: {type: integer, minimum: 1, maximum: 2048, default: 256}
+      responses:
+        "200":
+          description: Request completed (including gateway refusals, which are results, not API errors)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: {$ref: "#/components/schemas/ChatResult"}
+        "400": {$ref: "#/components/responses/InvalidParameters"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/EndpointNotFound"}
+  /api/v1/inference-gateway/status:
+    get:
+      tags: [Inference Gateway]
+      operationId: getInferenceGatewayStatus
+      summary: Adapter mode and data-plane health
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: false
+                    required: [mode, bnk_version, data_plane_healthy, gpu_instances, simulated_instances]
+                    properties:
+                      mode: {type: string, enum: [live, mock]}
+                      bnk_version: {type: string, examples: ["2.4.0"]}
+                      data_plane_healthy: {type: boolean, description: "Same as data_plane.healthy; kept for existing clients."}
+                      data_plane:
+                        type: object
+                        additionalProperties: false
+                        required: [healthy, last_check, detail]
+                        description: Result of the adapter's latest BNK data-plane probe (TMM answering on the endpoint VIPs).
+                        properties:
+                          healthy: {type: boolean}
+                          last_check: {type: [string, "null"], format: date-time, description: When the probe last ran; null before the first probe.}
+                          detail: {type: [string, "null"], description: "Why it is unhealthy, e.g. \"TMM not answering on 172.16.201.110:8000\"; null when healthy."}
+                      gpu_instances: {type: integer}
+                      simulated_instances: {type: integer}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, description: "`Authorization: Bearer <api_key>`"}
+    basicAuth: {type: http, scheme: basic, description: "`Authorization: Basic <api_key>`"}
+  schemas:
+    PolicyKind:
+      type: string
+      enum: [ai_load_balancing, token_quota, guardrails, api_auth, model_schedule, network_firewall]
+    PolicyStatus:
+      type: string
+      enum: [off, applying, "on", error]
+    EndpointStatus:
+      type: string
+      enum: [provisioning, active, degraded, error, deleting]
+    KubernetesObjectRef:
+      type: object
+      additionalProperties: false
+      required: [api_version, kind, name, namespace]
+      properties:
+        api_version: {type: string, examples: ["gateway.networking.k8s.io/v1"]}
+        kind: {type: string, examples: [Gateway]}
+        name: {type: string}
+        namespace: {type: [string, "null"]}
+    TokenQuotaConfig:
+      type: object
+      additionalProperties: false
+      required: [tokens_per_user, fallback_model]
+      properties:
+        tokens_per_user: {type: integer, minimum: 50, maximum: 10000000}
+        fallback_model: {type: string, examples: ["Qwen/Qwen2.5-1.5B-Instruct"]}
+        mode:
+          type: string
+          enum: [downgrade, block]
+          default: downgrade
+          description: "downgrade: over-budget requests are served by fallback_model (307 to the endpoint's fallback port when AI load balancing is on). block: over-budget requests get 429 global/quota-exceeded."
+    AiLoadBalancingConfig:
+      type: object
+      additionalProperties: false
+      description: >-
+        How F5's Endpoint Picker weighs its prefix-cache and queue scorers. load (default): queue 0.45, prefix
+        cache 0.20, the weights proven on the lab. cache: prefix cache 0.45, queue 0.20, for chat and RAG with
+        long shared prompts.
+      properties:
+        routing_priority: {type: string, enum: [cache, load], default: load}
+    ModelScheduleConfig:
+      type: object
+      additionalProperties: false
+      required: [off_peak_model]
+      description: "Peak hours [peak_start_hour, peak_end_hour) in UTC+utc_offset_hours are served by the main model; every other hour by off_peak_model. start > end wraps midnight; start == end means peak all day."
+      properties:
+        off_peak_model: {type: string, examples: ["Qwen/Qwen2.5-1.5B-Instruct"]}
+        peak_start_hour: {type: integer, minimum: 0, maximum: 23, default: 8}
+        peak_end_hour: {type: integer, minimum: 0, maximum: 24, default: 18}
+        utc_offset_hours: {type: integer, minimum: -12, maximum: 14, default: 0}
+    NetworkFirewallConfig:
+      type: object
+      additionalProperties: false
+      required: [firewall_policy_id]
+      description: >-
+        Attaches a network firewall policy (see the Network firewall extension) to all of the endpoint's
+        addresses. TMM enforces it before any other policy.
+      properties:
+        firewall_policy_id: {type: string, examples: ["fw-3f9a1c0b7d2e"]}
+        logging: {type: boolean, default: true}
+    InstanceUtilization:
+      type: object
+      additionalProperties: false
+      required: [instance_id, pod_ip, error]
+      properties:
+        instance_id: {type: string}
+        pod_ip: {type: [string, "null"]}
+        model: {type: [string, "null"], description: Model this server serves (a GPU instance runs the main and the fallback model)}
+        kv_cache_usage: {type: number, minimum: 0, maximum: 1, description: Share of the GPU's KV cache in use}
+        requests_running: {type: integer}
+        requests_waiting: {type: integer}
+        generation_tokens_per_s: {type: [number, "null"]}
+        prefix_cache_hit_rate: {type: [number, "null"]}
+        error: {type: [string, "null"]}
+    Utilization:
+      type: object
+      additionalProperties: false
+      required: [endpoint_id, instances]
+      properties:
+        endpoint_id: {type: string}
+        instances: {type: array, items: {$ref: "#/components/schemas/InstanceUtilization"}}
+    Policy:
+      type: object
+      additionalProperties: false
+      required: [kind, enabled, status, config]
+      properties:
+        kind: {$ref: "#/components/schemas/PolicyKind"}
+        enabled: {type: boolean}
+        status: {$ref: "#/components/schemas/PolicyStatus"}
+        status_reason: {type: [string, "null"]}
+        config:
+          anyOf:
+            - {$ref: "#/components/schemas/TokenQuotaConfig"}
+            - {$ref: "#/components/schemas/ModelScheduleConfig"}
+            - {$ref: "#/components/schemas/AiLoadBalancingConfig"}
+            - {$ref: "#/components/schemas/NetworkFirewallConfig"}
+            - {type: object, additionalProperties: false, maxProperties: 0}
+    PolicyUpdate:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled: {type: boolean}
+        config:
+          anyOf:
+            - {$ref: "#/components/schemas/TokenQuotaConfig"}
+            - {$ref: "#/components/schemas/ModelScheduleConfig"}
+            - {$ref: "#/components/schemas/AiLoadBalancingConfig"}
+            - {$ref: "#/components/schemas/NetworkFirewallConfig"}
+    InferenceEndpoint:
+      type: object
+      additionalProperties: false
+      required: [id, name, instance_ids, address, status, policies, created, models, kubernetes_objects]
+      properties:
+        id: {type: string, examples: ["ie-3f9a1c0b7d2e"]}
+        name: {type: string, pattern: "^[a-z0-9-]{1,40}$", examples: [chat-prod]}
+        instance_ids: {type: array, items: {type: string}, minItems: 1}
+        address: {type: [string, "null"], examples: ["http://172.16.201.110:8000"]}
+        status: {$ref: "#/components/schemas/EndpointStatus"}
+        status_reason: {type: [string, "null"]}
+        models: {type: array, items: {type: string}, description: "Model names served behind the endpoint: the instances' open models, then any frontier models"}
+        frontier_models:
+          type: array
+          items: {type: string}
+          description: "Frontier models (Amazon Bedrock) the endpoint also serves, through the frontier proxy on port 8002. A request naming one is routed there by BNK and metered like the rest."
+        frontier_address:
+          type: [string, "null"]
+          examples: ["http://172.16.201.111:8002"]
+          description: "Where the endpoint's frontier models are served: a second BNK address of the same endpoint, with the same policies. The main address sends a frontier-model request here with a 307. Null without frontier models."
+        policies: {type: array, minItems: 6, maxItems: 6, items: {$ref: "#/components/schemas/Policy"}}
+        created: {type: string, format: date-time}
+        kubernetes_objects: {type: array, items: {$ref: "#/components/schemas/KubernetesObjectRef"}}
+    InferenceEndpointCreate:
+      type: object
+      additionalProperties: false
+      required: [name, instance_ids]
+      properties:
+        name: {type: string, pattern: "^[a-z0-9-]{1,40}$"}
+        instance_ids: {type: array, items: {type: string}, minItems: 1}
+    InferenceEndpointUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, pattern: "^[a-z0-9-]{1,40}$"}
+        instance_ids: {type: array, items: {type: string}, minItems: 1}
+    UsageRow:
+      type: object
+      additionalProperties: false
+      required: [user, model, requests, prompt_tokens, completion_tokens, total_tokens, downgraded, refused]
+      properties:
+        user: {type: string}
+        model: {type: [string, "null"]}
+        requests: {type: integer}
+        prompt_tokens: {type: integer}
+        completion_tokens: {type: integer}
+        total_tokens: {type: integer}
+        downgraded: {type: integer}
+        refused: {type: integer, description: "All requests refused at the BNK edge (guardrail_blocked + auth_rejected + quota blocked)."}
+        guardrail_blocked: {type: integer}
+        auth_rejected: {type: integer}
+        quota_blocked: {type: integer}
+        quota_remaining: {type: [integer, "null"]}
+        cost_usd: {type: [number, "null"], description: "total_tokens x the model's price; null when the model has no price"}
+    UsageSummary:
+      type: object
+      additionalProperties: false
+      required: [endpoint_id, since, rows, series]
+      properties:
+        endpoint_id: {type: string}
+        since: {type: [string, "null"], format: date-time}
+        rows: {type: array, items: {$ref: "#/components/schemas/UsageRow"}}
+        prices_usd_per_1m:
+          type: object
+          additionalProperties: {type: number}
+          description: USD per 1M tokens by model (adapter setting TOKEN_PRICES_USD_PER_1M)
+        series:
+          type: array
+          description: Per-minute total tokens per user
+          items:
+            type: object
+            required: [minute, user, total_tokens]
+            properties:
+              minute: {type: string, format: date-time}
+              user: {type: string}
+              total_tokens: {type: integer}
+    BenchmarkWorkload:
+      type: object
+      additionalProperties: false
+      properties:
+        seed: {type: integer, default: 42}
+        conversations: {type: integer, minimum: 4, maximum: 200, default: 24}
+        turns: {type: integer, minimum: 1, maximum: 10, default: 4}
+        shared_prefixes: {type: integer, minimum: 1, maximum: 20, default: 4}
+        prefix_tokens: {type: integer, minimum: 0, maximum: 4096, default: 1500}
+        max_tokens: {type: integer, minimum: 16, maximum: 512, default: 128}
+        concurrency: {type: integer, minimum: 1, maximum: 32, default: 8}
+    BenchmarkModeResult:
+      type: object
+      additionalProperties: false
+      required: [mode, requests, ttft_p50_ms, ttft_p99_ms, latency_p50_ms, latency_p99_ms, output_tokens_per_s, prefix_cache_hit_rate, requests_per_instance]
+      properties:
+        mode: {type: string, enum: [round_robin, cache_aware]}
+        requests: {type: integer}
+        errors: {type: integer, default: 0}
+        ttft_p50_ms: {type: number}
+        ttft_p99_ms: {type: number}
+        itl_p50_ms: {type: number, description: Median gap between streamed tokens (inter-token latency)}
+        latency_p50_ms: {type: number}
+        latency_p99_ms: {type: number}
+        output_tokens_per_s: {type: number}
+        prefix_cache_hit_rate: {type: number, minimum: 0, maximum: 1}
+        requests_per_instance: {type: object, additionalProperties: {type: integer}}
+        rounds: {type: integer, description: "How many times this mode was measured. Rounds alternate with the other mode; each metric is the median of the rounds."}
+        spread:
+          type: object
+          description: "[min, max] of each metric across rounds. A difference between the modes is real when their ranges don't overlap."
+          additionalProperties: {type: array, items: {type: number}, minItems: 2, maxItems: 2}
+        routing_priority: {type: string, enum: [cache, load], description: "Cache-aware rows only: the AI load balancing routing priority that was measured."}
+        error_detail: {type: [string, "null"], description: "Most common request error aiperf saw, when any request failed."}
+        engine: {type: string, description: "What sent the load and measured the timings, e.g. \"aiperf 0.13.0\" (NVIDIA AIPerf) or \"builtin\"."}
+    BenchmarkRun:
+      type: object
+      additionalProperties: false
+      required: [id, endpoint_id, status, workload, results, started]
+      properties:
+        id: {type: string}
+        endpoint_id: {type: string}
+        status: {type: string, enum: [queued, running_round_robin, running_cache_aware, restoring, completed, failed]}
+        workload: {$ref: "#/components/schemas/BenchmarkWorkload"}
+        sizing:
+          description: >-
+            Set when the request had no workload: the run sized one from the GPUs' real KV cache, so the
+            shared prompts don't fit in one GPU's cache (routing then matters) but do fit in all of them.
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required: [gpus, kv_cache_tokens_per_gpu, kv_cache_tokens_total, max_model_len, working_set_tokens, fits_one_gpu]
+              properties:
+                gpus: {type: integer}
+                kv_cache_tokens_per_gpu: {type: integer, description: Smallest KV cache among the GPUs, in tokens (vllm:cache_config_info)}
+                kv_cache_tokens_total: {type: integer}
+                max_model_len: {type: integer}
+                working_set_tokens: {type: integer, description: Shared prefixes x prefix length}
+                fits_one_gpu: {type: boolean, description: "True means routing has nothing to win: every GPU can hold every prompt"}
+        results: {type: array, maxItems: 2, items: {$ref: "#/components/schemas/BenchmarkModeResult"}}
+        started: {type: string, format: date-time}
+        finished: {type: [string, "null"], format: date-time}
+        error: {type: [string, "null"]}
+    ChatResult:
+      type: object
+      additionalProperties: false
+      required: [outcome, status_code, latency_ms]
+      properties:
+        outcome: {type: string, enum: [served, downgraded, auth_rejected, guardrail_blocked, quota_blocked, error]}
+        status_code: {type: integer}
+        latency_ms: {type: number}
+        ttft_ms: {type: [number, "null"]}
+        content: {type: [string, "null"]}
+        model: {type: [string, "null"]}
+        instance_id: {type: [string, "null"]}
+        user: {type: [string, "null"]}
+        usage:
+          type: [object, "null"]
+          properties:
+            prompt_tokens: {type: integer}
+            completion_tokens: {type: integer}
+            total_tokens: {type: integer}
+        gateway_headers: {type: object, additionalProperties: {type: string}, description: "X-Auth, X-Guardrail, X-Quota, X-Schedule, X-Frontier and similar headers set by BNK"}
+    EmptyResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: {type: object, additionalProperties: false}
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        suggestion: {type: string}
+        request_id: {type: string}
+  responses:
+    Forbidden:
+      description: Forbidden (the key is valid but its user is not an admin)
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: global/forbidden}}
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: global/invalid-api-key}}
+    InvalidParameters:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: global/invalid-parameters}}
+    InstanceNotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: global/object-does-not-exist}}
+    EndpointNotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: global/object-does-not-exist}}
+    Duplicate:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: global/duplicate}}
+    Conflict:
+      description: Conflict (e.g. benchmark already running)
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                allOf:
+                  - {$ref: "#/components/schemas/ApiError"}
+                  - properties: {code: {const: global/conflict}}

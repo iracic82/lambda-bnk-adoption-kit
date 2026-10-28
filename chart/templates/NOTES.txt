@@ -1,0 +1,17 @@
+bnk-inference-adapter {{ .Chart.AppVersion }} installed in namespace {{ .Release.Namespace }} (mode: {{ .Values.mode }}).
+
+Try it (from a pod or with a port-forward):
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }} 8080:{{ .Values.service.apiPort }}
+  curl -s localhost:8080/api/v1/inference-gateway/status -H "Authorization: Bearer $API_KEY"
+  curl -s localhost:8080/api/v1/inference-endpoints -H "Authorization: Bearer $API_KEY" \
+       -H 'Content-Type: application/json' -d '{"name":"chat-prod","instance_ids":["<instance id>"]}'
+
+API contract: inference-gateway.openapi.yaml (Lambda Cloud API style: {"data": ...} / {"error": {...}}).
+{{- if not .Values.config.AUTH_INTROSPECT_URL }}
+
+WARNING: config.AUTH_INTROSPECT_URL is empty, so the api_auth policy cannot validate keys at the edge.
+{{- end }}
+{{- if and (eq .Values.mode "live") (not .Values.usageFlushToken.secretName) }}
+
+WARNING: usageFlushToken.secretName is empty, so usage flushes to the metering iRule are disabled.
+{{- end }}

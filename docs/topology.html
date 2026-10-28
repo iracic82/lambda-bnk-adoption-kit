@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab Topology</title>
+<style>
+  :root {
+    --bg: #0b0b0b; --panel: #121212; --card: #1a1a1a; --line: #2e2e2e; --line-strong: #484848;
+    --text: #f0efe2; --mild: #bfbeb4; --muted: #818178;
+    --gpu: #2fd06a; --frontier: #fda422; --guard: #6c9aff; --ctrl: #9a8cff; --meter: #ff6742; --sched: #e7e600; --bnk: #e4002b;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f6f6f1; --panel: #ffffff; --card: #fbfbf8; --line: #deded6; --line-strong: #bdbdb4;
+            --text: #161616; --mild: #4a4a44; --muted: #77776f; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font: 14px/1.55 Inter, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 1320px; margin: 0 auto; padding: 28px 24px 48px; }
+  header { margin-bottom: 18px; }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
+  h1 { font-size: 28px; line-height: 1.2; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+  .lede { color: var(--mild); margin: 10px 0 18px; max-width: 80ch; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+  .seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  .seg button, .ctl button { display: inline-flex; align-items: center; gap: 8px; font: 500 13px/1 inherit; font-family: inherit;
+                             color: var(--mild); background: transparent; border: 0; border-radius: 6px; padding: 9px 12px; cursor: pointer; }
+  .seg button:hover, .ctl button:hover { color: var(--text); }
+  .seg button[aria-pressed="true"] { background: var(--card); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .seg button:focus-visible, .ctl button:focus-visible { outline: 2px solid var(--ctrl); outline-offset: 2px; }
+  .ctl { display: inline-flex; gap: 4px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 20px; align-items: start; margin-top: 16px; }
+  @media (max-width: 1140px) { .stage { grid-template-columns: 1fr; } }
+  .canvas { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow-x: auto; }
+  svg { display: block; width: 100%; min-width: 980px; height: auto; }
+  svg text { font-family: Inter, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--text); }
+  svg .t { font-size: 13px; font-weight: 600; }
+  svg .s { font-size: 11px; fill: var(--muted); }
+  svg .lbl { font-size: 10px; letter-spacing: .08em; fill: var(--muted); }
+  svg .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; fill: var(--mild); }
+  svg .node { fill: var(--bg); stroke: var(--line); }
+  svg .card { fill: var(--card); stroke: var(--line); transition: stroke .25s, filter .25s; }
+  svg .card.lit { stroke: var(--c); stroke-width: 2; filter: drop-shadow(0 0 8px var(--c)); }
+  svg .zone { fill: none; stroke: var(--line-strong); stroke-dasharray: 4 5; }
+  svg .base { fill: none; stroke: var(--line); stroke-width: 1.5; }
+  svg .chip { fill: var(--bg); stroke: var(--line); transition: fill .25s, stroke .25s; }
+  svg .chip.lit { fill: var(--c); stroke: var(--c); }
+  svg .chip.lit + text { fill: #0b0b0b; font-weight: 600; }
+  svg .chiptext { font-size: 10px; fill: var(--mild); }
+  .hop { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; opacity: .28; transition: opacity .25s; }
+  .hop.dash { stroke-dasharray: 6 5; }
+  .hop.active { opacity: 1; animation: march 0.6s linear infinite; stroke-dasharray: 8 6; }
+  .hop.done { opacity: .9; }
+  @keyframes march { to { stroke-dashoffset: -14; } }
+  .packet { pointer-events: none; }
+  .packet circle.core { fill: #fff; }
+  .card-hit { cursor: pointer; fill: transparent; }
+  aside { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+  aside .eyebrow { display: flex; align-items: center; gap: 8px; }
+  aside h2 { font-size: 18px; font-weight: 600; margin: 0 0 6px; }
+  aside p.what { color: var(--mild); margin: 0 0 16px; font-size: 13px; }
+  ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; counter-reset: s; }
+  ol.steps li { display: grid; grid-template-columns: 24px 1fr; gap: 10px; font-size: 13px; line-height: 1.5; counter-increment: s;
+                padding: 8px; border-radius: 6px; cursor: pointer; color: var(--mild); transition: background .2s, color .2s; }
+  ol.steps li:hover { background: var(--card); }
+  ol.steps li.on { background: var(--card); color: var(--text); box-shadow: inset 2px 0 0 var(--flow-color); }
+  ol.steps li::before { content: counter(s); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+                        font-size: 11px; font-weight: 700; color: #0b0b0b; background: var(--flow-color); margin-top: 1px; opacity: .55; }
+  ol.steps li.on::before, ol.steps li.done::before { opacity: 1; }
+  .detail { margin-top: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); font-size: 13px; color: var(--mild); min-height: 44px; }
+  .detail b { color: var(--text); }
+  code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+  @media (max-width: 1000px) { .grid2 { grid-template-columns: 1fr; } }
+  section.card2 { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+  section.card2 h2 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.k { color: var(--mild); white-space: nowrap; }
+  td .m { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  @media (prefers-reduced-motion: reduce) { .hop.active { animation: none; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <p class="eyebrow">Lambda Cloud POC · F5 BIG-IP Next for Kubernetes 2.4</p>
+  <h1>Lab topology</h1>
+  <p class="lede">Every client request goes to one BNK VIP. One iRule per endpoint checks the key, scans the prompt, applies the quota and
+    schedule, picks the backend and meters the answer, for the T4 GPUs and for Amazon Bedrock alike. Solid lines are customer traffic (data plane), dashed lines are configuration (control plane). Pick a
+    flow to watch a request travel, or click any box to see what it does.</p>
+  <div class="bar">
+    <div class="seg" role="group" aria-label="Choose a flow">
+      <button type="button" data-flow="gpu"><span class="dot" style="background:var(--gpu)"></span>Chat to a GPU</button>
+      <button type="button" data-flow="frontier"><span class="dot" style="background:var(--frontier)"></span>Frontier model</button>
+      <button type="button" data-flow="guard"><span class="dot" style="background:var(--guard)"></span>Guardrail block</button>
+      <button type="button" data-flow="sched"><span class="dot" style="background:var(--sched)"></span>Time of day</button>
+      <button type="button" data-flow="ctrl"><span class="dot" style="background:var(--ctrl)"></span>Console and API</button>
+      <button type="button" data-flow="meter"><span class="dot" style="background:var(--meter)"></span>Usage metering</button>
+    </div>
+    <div class="ctl" role="group" aria-label="Playback">
+      <button type="button" id="play" aria-label="Pause">❚❚ Pause</button>
+      <button type="button" id="prev" aria-label="Previous step">‹ Step</button>
+      <button type="button" id="next" aria-label="Next step">Step ›</button>
+    </div>
+  </div>
+</header>
+
+<div class="stage">
+<div class="canvas">
+<svg id="topo" viewBox="0 0 1200 600" role="img" aria-label="Lab topology diagram with animated request flows">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,1 L9,5 L0,9 z" fill="context-stroke"/>
+    </marker>
+    <filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="5"/></filter>
+  </defs>
+
+  <!-- zones -->
+  <rect class="zone" x="214" y="30" width="636" height="556" rx="12"/>
+  <text class="lbl" x="232" y="50">KUBERNETES CLUSTER · INSTRUQT SANDBOX</text>
+  <rect class="zone" x="884" y="256" width="300" height="234" rx="12"/>
+  <text class="lbl" x="902" y="278">OUTSIDE THE SANDBOX</text>
+
+  <!-- client -->
+  <rect class="card" id="n-client" x="24" y="92" width="160" height="56" rx="8"/>
+  <text class="t" x="40" y="116">Client</text>
+  <text class="s" x="40" y="134">customer app · OpenAI SDK</text>
+
+  <!-- node: bnk -->
+  <rect class="node" x="230" y="64" width="260" height="142" rx="10"/>
+  <text class="lbl" x="246" y="84">NODE · BNK</text><text class="s" x="320" y="84">control plane</text>
+  <rect class="card" id="n-console" x="246" y="98" width="228" height="44" rx="6"/>
+  <text class="t" x="260" y="117">Lambda Console</text><text class="mono" x="420" y="117">:30100</text>
+  <text class="s" x="260" y="133">nginx · adds the console key</text>
+  <rect class="card" id="n-prov" x="246" y="150" width="228" height="44" rx="6"/>
+  <text class="t" x="260" y="169">GPU provisioner</text>
+  <text class="s" x="260" y="185">creates T4 VMs and relay pods</text>
+
+  <!-- node: dpu -->
+  <rect class="node" x="230" y="222" width="260" height="262" rx="10"/>
+  <text class="lbl" x="246" y="242">NODE · DPU</text><text class="s" x="320" y="242">data plane · simulated BlueField-3</text>
+  <rect class="card" id="n-tmm" x="246" y="256" width="228" height="136" rx="6" style="stroke:var(--bnk);stroke-width:1.5"/>
+  <text class="t" x="260" y="278">BNK TMM</text><text class="s" x="330" y="278">one VIP per endpoint</text>
+  <text class="mono" x="260" y="297">:8000 main · :8001 fb · :8002 frontier</text>
+  <g id="chips">
+    <rect class="chip" id="c-auth" x="258" y="310" width="64" height="20" rx="4"/><text class="chiptext" x="290" y="324" text-anchor="middle">auth</text>
+    <rect class="chip" id="c-guard" x="328" y="310" width="64" height="20" rx="4"/><text class="chiptext" x="360" y="324" text-anchor="middle">guardrail</text>
+    <rect class="chip" id="c-quota" x="398" y="310" width="64" height="20" rx="4"/><text class="chiptext" x="430" y="324" text-anchor="middle">quota</text>
+    <rect class="chip" id="c-sched" x="258" y="336" width="64" height="20" rx="4"/><text class="chiptext" x="290" y="350" text-anchor="middle">schedule</text>
+    <rect class="chip" id="c-front" x="328" y="336" width="64" height="20" rx="4"/><text class="chiptext" x="360" y="350" text-anchor="middle">frontier</text>
+    <rect class="chip" id="c-meter" x="398" y="336" width="64" height="20" rx="4"/><text class="chiptext" x="430" y="350" text-anchor="middle">metering</text>
+  </g>
+  <text class="s" x="260" y="378">iRule, in this order, on every request</text>
+  <text class="mono" x="246" y="418">external  10.1.10.201</text>
+  <text class="mono" x="246" y="436">internal  10.1.20.201</text>
+  <text class="s" x="246" y="458">VIPs 172.16.201.0/24 via 10.1.10.201</text>
+
+  <!-- node: server -->
+  <rect class="node" x="550" y="64" width="290" height="420" rx="10"/>
+  <text class="lbl" x="566" y="84">NODE · SERVER</text><text class="s" x="660" y="84">workloads</text>
+  <rect class="card" id="n-adapter" x="566" y="100" width="258" height="52" rx="6"/>
+  <text class="t" x="580" y="121">bnk-inference-adapter</text><text class="s" x="580" y="139">Inference API · usage collector :5514</text>
+  <rect class="card" id="n-mock" x="566" y="164" width="258" height="52" rx="6"/>
+  <text class="t" x="580" y="185">Lambda API mock</text><text class="s" x="580" y="203">v1.10.0 · API keys · introspection</text>
+  <rect class="card" id="n-epp" x="566" y="228" width="258" height="52" rx="6"/>
+  <text class="t" x="580" y="249">F5 Endpoint Picker</text><text class="s" x="580" y="267">InferencePool · KV cache and queue</text>
+  <rect class="card" id="n-relay" x="566" y="292" width="258" height="52" rx="6"/>
+  <text class="t" x="580" y="313">Relay pods</text><text class="s" x="580" y="331">one per model · stand in for vLLM pods</text>
+  <rect class="card" id="n-fproxy" x="566" y="356" width="258" height="52" rx="6"/>
+  <text class="t" x="580" y="377">frontier-proxy</text><text class="s" x="580" y="395">OpenAI to Bedrock Converse, signed</text>
+  <rect class="card" id="n-crelay" x="566" y="420" width="258" height="52" rx="6"/>
+  <text class="t" x="580" y="441">calypso-relay</text><text class="s" x="580" y="459">scan sideband to F5 AI Guardrails</text>
+
+  <!-- data-path networks -->
+  <rect class="node" x="230" y="500" width="610" height="76" rx="10"/>
+  <text class="lbl" x="246" y="520">DATA-PATH NETWORKS · GRE TUNNELS SIMULATE THE DPU LINKS</text>
+  <text class="t" x="246" y="544" style="font-size:12px">Key 1 · internal-net</text>
+  <text class="mono" x="246" y="562">10.1.20.0/24 · dpu ↔ server</text>
+  <text class="t" x="446" y="544" style="font-size:12px">Key 2 · external-net</text>
+  <text class="mono" x="446" y="562">10.1.10.0/24 · dpu ↔ server</text>
+  <text class="t" x="646" y="544" style="font-size:12px">Key 3 · client leg</text>
+  <text class="mono" x="646" y="562">bnk host = 10.1.10.11</text>
+
+  <!-- outside -->
+  <rect class="card" id="n-gpu" x="900" y="290" width="268" height="56" rx="6" style="stroke:var(--gpu)"/>
+  <text class="t" x="916" y="312">GCP project · 2 × NVIDIA T4</text><text class="s" x="916" y="330">vLLM · Qwen 7B AWQ :8000 · 1.5B :8100</text>
+  <rect class="card" id="n-bedrock" x="900" y="354" width="268" height="56" rx="6" style="stroke:var(--frontier)"/>
+  <text class="t" x="916" y="376">Amazon Bedrock</text><text class="s" x="916" y="394">Nova Pro · Nova Lite · us-east-1</text>
+  <rect class="card" id="n-calypso" x="900" y="418" width="268" height="56" rx="6" style="stroke:var(--guard)"/>
+  <text class="t" x="916" y="440">F5 AI Guardrails</text><text class="s" x="916" y="458">CalypsoAI scan API</text>
+
+  <!-- plane key -->
+  <g transform="translate(24,340)">
+    <text class="lbl" x="0" y="0">PLANES</text>
+    <line x1="0" y1="18" x2="34" y2="18" stroke="var(--mild)" stroke-width="2.5"/>
+    <text class="s" x="42" y="22">data · customer traffic</text>
+    <line x1="0" y1="38" x2="34" y2="38" stroke="var(--mild)" stroke-width="2.5" stroke-dasharray="6 5"/>
+    <text class="s" x="42" y="42">control · configuration</text>
+    <text class="s" x="0" y="66">The console configures BNK.</text>
+    <text class="s" x="0" y="82">Customer requests go straight</text>
+    <text class="s" x="0" y="98">to the VIP, never through it.</text>
+  </g>
+
+  <!-- physical links, always visible -->
+  <path class="base" d="M104,148 V300 H246"/>
+  <path class="base" d="M184,120 H246"/>
+  <path class="base" d="M474,120 H566"/>
+  <path class="base" d="M474,318 H566"/>
+  <path class="base" d="M824,318 H900"/>
+  <path class="base" d="M824,382 H900"/>
+  <path class="base" d="M824,446 H900"/>
+
+  <g id="hops"></g>
+  <g id="packets"></g>
+  <!-- invisible hit areas so every box is clickable -->
+  <g id="hits"></g>
+</svg>
+</div>
+
+<aside aria-live="polite">
+  <p class="eyebrow"><span class="dot" id="pdot"></span><span id="plabel">Flow</span></p>
+  <h2 id="ptitle"></h2>
+  <p class="what" id="pwhat"></p>
+  <ol class="steps" id="psteps"></ol>
+  <div class="detail" id="detail">Click any box in the diagram to see what it is.</div>
+</aside>
+</div>
+
+<div class="grid2">
+<section class="card2">
+  <h2>Addresses and ports</h2>
+  <table>
+    <tbody>
+      <tr><td class="k">Lambda Console</td><td><span class="m">bnk :30100</span>. nginx sends <code>/api/v1/inference-*</code> to the adapter and everything else to the API mock.</td></tr>
+      <tr><td class="k">Endpoint VIP</td><td><span class="m">172.16.201.110–129 :8000</span>, on TMM. The bnk host reaches it as a client from 10.1.10.11.</td></tr>
+      <tr><td class="k">Fallback listener</td><td><span class="m">VIP :8001</span>. Quota downgrade or off-peak schedule with AI load balancing on (BNK answers 307).</td></tr>
+      <tr><td class="k">Frontier listener</td><td><span class="m">VIP :8002</span>. Requests for a Bedrock model (BNK answers 307), routed to frontier-proxy.</td></tr>
+      <tr><td class="k">Usage collector</td><td><span class="m">adapter :5514</span>. TCP sideband from the iRule, drained every 5 seconds.</td></tr>
+      <tr><td class="k">TMM self-IPs</td><td><span class="m">10.1.10.201 · 10.1.20.201</span>. Sidebands leave from TMM's pod address, so NetworkPolicies admit TMM by label.</td></tr>
+      <tr><td class="k">Namespaces</td><td><span class="m">f5-bnk</span> Gateways and iRules · <span class="m">lambda-ie</span> routes, pools, relays, adapter, proxies · <span class="m">lambda-portal</span> console and API mock.</td></tr>
+    </tbody>
+  </table>
+</section>
+<section class="card2">
+  <h2>What is real and what stands in</h2>
+  <table>
+    <thead><tr><th>Real</th><th>Stand-in for this sandbox</th></tr></thead>
+    <tbody>
+      <tr><td>BNK 2.4: TMM, Gateway API, GAIE InferencePool, F5 Endpoint Picker, iRules</td><td>The DPU is simulated, with GRE tunnels between dpu and server as its links. In production BNK runs on BlueField-3.</td></tr>
+      <tr><td>NVIDIA T4 GPUs with vLLM, Amazon Bedrock, F5 AI Guardrails</td><td>Relay pods stand in for vLLM pods, because the GPUs are VMs outside the cluster.</td></tr>
+      <tr><td>Every token count, latency, cache hit and cost figure</td><td>The Lambda console and API are a replica on a mock backend. API keys are sandbox keys.</td></tr>
+    </tbody>
+  </table>
+</section>
+</div>
+</main>
+
+<script>
+// Each hop: the path a packet travels, the box it lights, the iRule chips it lights, and its step text.
+const FLOWS = {
+  gpu: { label: "Data plane", color: "--gpu", t: "Chat to a GPU", w: "A customer's application calls the endpoint address with any OpenAI SDK. The console is not in this path.", hops: [
+    { d: "M104,148 V300 H246", lit: ["n-client", "n-tmm"], s: "The customer's app sends <code>POST /v1/chat/completions</code> straight to the endpoint VIP on port 8000." },
+    { d: "M360,300 V300", lit: ["n-tmm"], chips: ["c-auth"], s: "TMM runs the endpoint's iRule. First the API key is checked against Lambda's key service." },
+    { d: "M474,366 H540 V446 H566", lit: ["n-crelay"], chips: ["c-guard"], s: "The guardrail step sends the prompt over a sideband to <code>calypso-relay</code>, which calls <b>F5 AI Guardrails</b>." },
+    { d: "M824,446 H900", lit: ["n-calypso"], chips: ["c-guard"], s: "F5 AI Guardrails runs the project's guardrails and answers <b>cleared</b>." },
+    { d: "M566,458 H540 V376 H474", lit: ["n-tmm"], chips: ["c-guard"], back: true, s: "The verdict comes back to TMM, within the same request." },
+    { d: "M360,300 V300", lit: ["n-tmm"], chips: ["c-quota", "c-sched"], s: "Quota and schedule: the user is within budget and it's peak hours, so the main 7B model serves." },
+    { d: "M474,286 H520 V254 H566", lit: ["n-epp"], s: "With AI load balancing on, TMM asks the F5 Endpoint Picker which GPU holds the prompt's prefix in its KV cache and has the shortest queue." },
+    { d: "M474,318 H566", lit: ["n-relay"], s: "TMM sends the request to the relay pod of the GPU the picker chose." },
+    { d: "M824,318 H900", lit: ["n-gpu"], s: "vLLM on the T4 answers." },
+    { d: "M900,338 H862 V488 H500 V380 H474", lit: ["n-tmm"], chips: ["c-meter"], back: true, s: "On the way back the iRule meters the tokens and adds the <code>X-BNK-*</code> headers." },
+    { d: "M246,306 H96 V148", lit: ["n-client"], back: true, s: "The answer reaches the customer's app. (The console's Playground sends this same request through the adapter, for demos.)" },
+  ]},
+  frontier: { label: "Data plane", color: "--frontier", t: "Frontier model", w: "Same address and API key, with a Bedrock model in the request.", hops: [
+    { d: "M104,148 V300 H246", lit: ["n-client", "n-tmm"], s: "The customer's app sends a request with <code>\"model\": \"us.amazon.nova-pro-v1:0\"</code> to the same VIP." },
+    { d: "M360,300 V300", lit: ["n-tmm"], chips: ["c-auth"], s: "The iRule checks the API key, the same as for the GPUs." },
+    { d: "M474,366 H540 V446 H566", lit: ["n-crelay"], chips: ["c-guard"], s: "The guardrail step sends the prompt over a sideband to <code>calypso-relay</code>, which calls <b>F5 AI Guardrails</b>." },
+    { d: "M824,446 H900", lit: ["n-calypso"], chips: ["c-guard"], s: "F5 AI Guardrails answers <b>cleared</b>, so the request may go on to Bedrock." },
+    { d: "M566,458 H540 V376 H474", lit: ["n-tmm"], chips: ["c-guard"], back: true, s: "The verdict comes back to TMM." },
+    { d: "M360,300 V300", lit: ["n-tmm"], chips: ["c-quota", "c-front"], s: "Quota checked, then the frontier step sees a Bedrock model and answers 307 to the frontier listener on port 8002. SDKs follow it." },
+    { d: "M474,346 H530 V382 H566", lit: ["n-fproxy"], s: "That listener's route sends the request to <code>frontier-proxy</code>, which translates it to Bedrock's Converse API and signs it." },
+    { d: "M824,382 H900", lit: ["n-bedrock"], s: "Amazon Bedrock answers." },
+    { d: "M900,402 H870 V492 H508 V384 H474", lit: ["n-tmm"], chips: ["c-meter"], back: true, s: "The iRule meters the tokens and marks the answer <code>X-Frontier: bedrock</code>." },
+    { d: "M246,306 H96 V148", lit: ["n-client"], back: true, s: "The answer reaches the app. Usage bills it next to the GPU rows, at its own price." },
+  ]},
+  guard: { label: "Data plane", color: "--guard", t: "Guardrail block", w: "A jailbreak prompt is stopped at the VIP. No GPU or Bedrock time is spent.", hops: [
+    { d: "M104,148 V300 H246", lit: ["n-client", "n-tmm"], s: "The customer's app sends a prompt-injection attempt to the VIP." },
+    { d: "M360,300 V300", lit: ["n-tmm"], chips: ["c-auth", "c-guard"], s: "The key is checked, then the guardrail step collects the request body." },
+    { d: "M474,366 H540 V446 H566", lit: ["n-crelay"], chips: ["c-guard"], s: "The guardrail step sends the prompt over a sideband to <code>calypso-relay</code>, which calls <b>F5 AI Guardrails</b>." },
+    { d: "M824,446 H900", lit: ["n-calypso"], chips: ["c-guard"], s: "F5 AI Guardrails runs prompt-injection, jailbreak and custom guardrails, and answers <b>flagged</b>." },
+    { d: "M566,458 H540 V376 H474", lit: ["n-tmm"], chips: ["c-guard"], back: true, s: "The verdict comes back to TMM. No GPU, no Bedrock, no tokens." },
+    { d: "M246,306 H96 V148", lit: ["n-client"], back: true, s: "TMM answers the app itself with <code>X-Guardrail: blocked</code>. Usage counts it under Refused. A failed scan is refused too (fail closed)." },
+  ]},
+  sched: { label: "Control, then data", color: "--sched", t: "Time of day", w: "Configured once in the console (dashed), then applied by TMM to every request (solid).", hops: [
+    { d: "M184,120 H246", lit: ["n-client", "n-console"], dash: true, plane: "control", s: "Control plane: on the Lambda Console Policies tab, the Model schedule card sets peak hours, a time zone and the off-peak model." },
+    { d: "M474,120 H566", lit: ["n-adapter"], dash: true, plane: "control", s: "The adapter re-renders the endpoint's iRule." },
+    { d: "M566,144 H536 V290 H474", lit: ["n-tmm"], dash: true, plane: "control", s: "BNK programs TMM with it. From here on, no console is involved." },
+    { d: "M104,148 V300 H246", lit: ["n-client", "n-tmm"], s: "Data plane: the customer's app sends a request to the VIP outside peak hours." },
+    { d: "M360,300 V300", lit: ["n-tmm"], chips: ["c-auth", "c-guard", "c-quota"], s: "Key, guardrail and quota run first, as always." },
+    { d: "M360,300 V300", lit: ["n-tmm"], chips: ["c-sched"], s: "The schedule step reads the hour on TMM's clock. It's off-peak, so the request goes to the off-peak model. Nothing is redeployed when the hour changes." },
+    { d: "M474,330 H566", lit: ["n-relay"], s: "Off-peak model is the <b>1.5B</b>: TMM sends the request to the fallback relay on the same T4." },
+    { d: "M824,330 H900", lit: ["n-gpu"], s: "The T4 answers from the 1.5B, with <code>X-Schedule: off_peak</code>." },
+    { d: "M474,346 H530 V382 H566", lit: ["n-fproxy"], chips: ["c-front"], s: "Or the off-peak model is <b>Nova Lite</b>: TMM answers 307 to the frontier listener, and frontier-proxy calls Bedrock." },
+    { d: "M824,382 H900", lit: ["n-bedrock"], s: "Bedrock answers, with <code>X-Schedule: off_peak</code> and <code>X-Frontier: bedrock</code>. Each is priced per model in Usage." },
+  ]},
+  ctrl: { label: "Control path", color: "--ctrl", t: "Console and API", w: "What happens when you click a button or call the Inference API.", hops: [
+    { d: "M184,120 H246", dash: true, lit: ["n-client", "n-console"], s: "The browser calls the console on :30100. nginx adds the console key, so the browser never holds it." },
+    { d: "M474,120 H566", dash: true, lit: ["n-adapter"], s: "<code>/api/v1/inference-*</code> goes to the adapter. Everything else goes to the Lambda API mock." },
+    { d: "M566,140 H532 V270 H474", dash: true, lit: ["n-tmm"], dash: true, s: "The adapter renders the endpoint's BNK objects (Gateway, HTTPRoute, InferencePool, F5EPP, iRule) and applies them." },
+    { d: "M360,300 V300", dash: true, lit: ["n-tmm"], chips: ["c-auth", "c-guard", "c-quota", "c-sched", "c-front", "c-meter"], s: "BNK's controller programs TMM. The policy shows <code>applying</code> until TMM runs the new iRule." },
+  ]},
+  meter: { label: "Data path", color: "--meter", t: "Usage metering", w: "How token counts reach the Usage tab.", hops: [
+    { d: "M360,300 V300", lit: ["n-tmm"], chips: ["c-meter"], s: "On every response the iRule parks one record in a TMM table: user, model, tokens, outcome, instance." },
+    { d: "M566,112 H552 V262 H474", lit: ["n-tmm"], dash: true, s: "Every 5 seconds the adapter calls the endpoint's <code>/bnk/flush</code> path with a shared token." },
+    { d: "M474,300 H536 V142 H566", lit: ["n-adapter"], s: "TMM sends the parked records over a TCP sideband to the adapter's collector on port 5514." },
+    { d: "M566,134 H520 V146 H474", lit: ["n-console"], back: true, s: "The adapter stores them. The <b>Lambda Console</b> Usage tab shows tokens and cost per user and model, and refusals by cause." },
+  ]},
+};
+const INFO = {
+  "n-client": "<b>Client.</b> The customer\'s application, or curl in the terminal: any OpenAI SDK pointed at the endpoint address. It talks to the BNK VIP directly. A person using the Lambda Console is a control-plane client of the console instead.",
+  "n-console": "<b>Lambda Console.</b> The replica of cloud.lambda.ai with the new Inference section: create endpoints, toggle policies, chat in the Playground, read Usage. Served by nginx on port 30100, which holds the console key server-side and sends <code>/api/v1/inference-*</code> to the adapter.",
+  "n-prov": "<b>GPU provisioner.</b> Creates the T4 VMs in the attached GCP project, installs vLLM, and creates one relay pod per model so BNK can reach them.",
+  "n-tmm": "<b>BNK TMM.</b> BIG-IP Next's data plane. It owns every endpoint VIP and runs one iRule per endpoint with the six steps below, in order.",
+  "n-adapter": "<b>bnk-inference-adapter.</b> The Inference API (ten paths in Lambda's style). It renders BNK objects for each endpoint, collects usage records and serves the usage and utilization views.",
+  "n-mock": "<b>Lambda API mock.</b> The Lambda Cloud API v1.10.0, plus API keys and the key introspection the iRule calls.",
+  "n-epp": "<b>F5 Endpoint Picker.</b> Reads each vLLM's KV-cache events and queue, and tells TMM which GPU should take each request.",
+  "n-relay": "<b>Relay pods.</b> One per model on each T4. They forward chat on :8000 and KV events on :20080, standing in for vLLM pods because the GPUs are VMs outside the cluster.",
+  "n-fproxy": "<b>frontier-proxy.</b> Translates OpenAI chat to Amazon Bedrock's Converse API and signs it with the sandbox's AWS account. BNK still makes every routing decision.",
+  "n-crelay": "<b>calypso-relay.</b> Holds the F5 AI Guardrails token and calls its scan API for the iRule, sending every string the model would read. In a sandbox without a Calypso token, a keyword mock scanner with the same contract takes its place.",
+  "n-gpu": "<b>2 × NVIDIA T4.</b> GCP VMs running vLLM with Qwen2.5-7B-Instruct-AWQ (main) and Qwen2.5-1.5B-Instruct (fallback) side by side.",
+  "n-bedrock": "<b>Amazon Bedrock.</b> Nova Pro and Nova Lite in us-east-1, served behind the same endpoint, key and bill.",
+  "n-calypso": "<b>F5 AI Guardrails (CalypsoAI).</b> Runs the project's prompt-injection, jailbreak and custom guardrails, and answers cleared or flagged.",
+};
+const NS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById("topo"), hopsG = document.getElementById("hops"), packetsG = document.getElementById("packets");
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let flow = "gpu", step = 0, playing = true, timer = null, anim = null;
+
+function el(tag, attrs) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+function color() { return `var(${FLOWS[flow].color})`; }
+
+function clearLit() {
+  document.querySelectorAll(".lit").forEach(e => e.classList.remove("lit"));
+}
+function draw() {
+  hopsG.innerHTML = ""; packetsG.innerHTML = "";
+  FLOWS[flow].hops.forEach((h, i) => {
+    if (h.d.match(/^M(\d+),(\d+) V\2$/)) return;   // a step inside TMM: no line, the chips light instead
+    const p = el("path", { d: h.d, class: "hop" + (h.dash ? " dash" : ""), stroke: color(), "marker-end": "url(#arrow)", "data-i": i });
+    hopsG.appendChild(p);
+  });
+}
+function panel() {
+  const f = FLOWS[flow];
+  document.getElementById("pdot").style.background = color();
+  document.getElementById("plabel").textContent = f.label;
+  document.getElementById("ptitle").textContent = f.t;
+  document.getElementById("pwhat").textContent = f.w;
+  const ol = document.getElementById("psteps");
+  ol.style.setProperty("--flow-color", color());
+  ol.innerHTML = f.hops.map((h, i) => `<li data-i="${i}"><span>${h.s}</span></li>`).join("");
+  ol.querySelectorAll("li").forEach(li => li.addEventListener("click", () => { pause(); go(+li.dataset.i); }));
+}
+function go(i) {
+  const hops = FLOWS[flow].hops;
+  step = (i + hops.length) % hops.length;
+  const h = hops[step];
+  clearLit();
+  document.documentElement.style.setProperty("--c", color());
+  (h.lit || []).forEach(id => document.getElementById(id)?.classList.add("lit"));
+  (h.chips || []).forEach(id => document.getElementById(id)?.classList.add("lit"));
+  hopsG.querySelectorAll(".hop").forEach(p => {
+    const n = +p.dataset.i;
+    p.classList.toggle("active", n === step);
+    p.classList.toggle("done", n < step);
+  });
+  document.querySelectorAll("#psteps li").forEach((li, n) => { li.classList.toggle("on", n === step); li.classList.toggle("done", n < step); });
+  firePacket(h);
+}
+function firePacket(h) {
+  if (anim) cancelAnimationFrame(anim);
+  packetsG.innerHTML = "";
+  const path = hopsG.querySelector(`.hop[data-i="${step}"]`);
+  if (!path || reduce) return;
+  const len = path.getTotalLength();
+  const g = el("g", { class: "packet" });
+  if (h.dash) {   // control plane: a hollow ring, not customer traffic
+    g.appendChild(el("circle", { r: 7, fill: "none", stroke: color(), "stroke-width": 2.5 }));
+  } else {
+    g.appendChild(el("circle", { r: 9, fill: color(), filter: "url(#glow)", opacity: .9 }));
+    g.appendChild(el("circle", { r: 4.5, class: "core" }));
+  }
+  packetsG.appendChild(g);
+  const dur = Math.max(700, len * 3.2), t0 = performance.now();
+  (function tick(now) {
+    const k = Math.min(1, (now - t0) / dur);
+    const e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    const pt = path.getPointAtLength(e * len);
+    g.setAttribute("transform", `translate(${pt.x},${pt.y})`);
+    if (k < 1) anim = requestAnimationFrame(tick);
+  })(t0);
+}
+function loop() {
+  clearTimeout(timer);
+  if (!playing) return;
+  timer = setTimeout(() => { go(step + 1); loop(); }, 2400);
+}
+function pause() { playing = false; clearTimeout(timer); document.getElementById("play").textContent = "▶ Play"; }
+function play() { playing = true; document.getElementById("play").textContent = "❚❚ Pause"; loop(); }
+function select(f) {
+  flow = f; step = 0;
+  document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.flow === f)));
+  draw(); panel(); go(0); if (playing) loop();
+}
+document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => select(b.dataset.flow)));
+document.getElementById("play").addEventListener("click", () => playing ? pause() : play());
+document.getElementById("next").addEventListener("click", () => { pause(); go(step + 1); });
+document.getElementById("prev").addEventListener("click", () => { pause(); go(step - 1); });
+// click any box for its description
+Object.keys(INFO).forEach(id => {
+  const r = document.getElementById(id); if (!r) return;
+  const hit = el("rect", { class: "card-hit", x: r.getAttribute("x"), y: r.getAttribute("y"), width: r.getAttribute("width"), height: r.getAttribute("height"), rx: 6, tabindex: 0, role: "button", "aria-label": id.replace("n-", "") });
+  const show = () => { document.getElementById("detail").innerHTML = INFO[id]; };
+  hit.addEventListener("click", show); hit.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(); } });
+  document.getElementById("hits").appendChild(hit);
+});
+if (reduce) pause();
+select("gpu");
+</script>
+</body>
+</html>

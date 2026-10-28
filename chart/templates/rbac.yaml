@@ -1,0 +1,114 @@
+{{- /*
+Least privilege, namespaced only (no ClusterRole). Everything the adapter manages lives in two
+namespaces (contracts/bnk-objects.md):
+  GATEWAY_NAMESPACE (f5-bnk): Gateways, composite F5BigCneIrules, NetPolicies, and the network firewall:
+                               SecPolicies, F5BigFwPolicies, address and port lists, the log publisher and
+                               profile (+ TMM pod delete when the lab watchdog is on)
+  IE_NAMESPACE (lambda-ie):   HTTPRoutes, InferencePools, F5EPPs, round-robin Services, the instances
+                               ConfigMap (read), relay Deployments (patch pod-template labels only)
+Gateways in other namespaces are read cluster-wide only to avoid VIP collisions: a separate, read-only
+ClusterRole limited to gateways get/list.
+Plural names verified live on BNK 2.4 (`kubectl api-resources`): f5-big-cne-irules, f5-epps.
+deletecollection: endpoint delete removes custom objects with one DELETE per kind and a label selector
+(k8s/real.py delete_by_label); Services are listed and deleted one by one.
+*/ -}}
+{{- $gw := .Values.config.GATEWAY_NAMESPACE -}}
+{{- $ie := .Values.config.IE_NAMESPACE -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-gateway
+  namespace: {{ $gw }}
+rules:
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [gateways]
+    verbs: [get, list, watch, create, update, patch, delete, deletecollection]
+  - apiGroups: [k8s.f5net.com]
+    resources: [f5-big-cne-irules]
+    verbs: [get, list, watch, create, update, patch, delete, deletecollection]
+  - apiGroups: [gateway.k8s.f5.com]
+    resources: [netpolicies, secpolicies]
+    verbs: [get, list, watch, create, update, patch, delete, deletecollection]
+  - apiGroups: [k8s.f5net.com]
+    resources: [f5-big-fw-policies, f5-big-cne-addresslists, f5-big-cne-portlists, f5-big-log-hslpubs,
+                f5-big-log-profiles]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+{{- if eq (toString .Values.config.TMM_WATCHDOG) "1" }}
+  # lab-only watchdog: recreate a stalled TMM pod
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-gateway
+  namespace: {{ $gw }}
+subjects:
+  - {kind: ServiceAccount, name: {{ .Release.Name }}, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ .Release.Name }}-gateway}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-endpoints
+  namespace: {{ $ie }}
+rules:
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [httproutes]
+    verbs: [get, list, watch, create, update, patch, delete, deletecollection]
+  - apiGroups: [inference.networking.k8s.io]
+    resources: [inferencepools]
+    verbs: [get, list, watch, create, update, patch, delete, deletecollection]
+  - apiGroups: [inference.k8s.f5.com]
+    resources: [f5-epps]
+    verbs: [get, list, watch, create, update, patch, delete, deletecollection]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [lambda-instances]
+    verbs: [get, watch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, patch]   # patch: endpoint membership labels on running relay pods
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-endpoints
+  namespace: {{ $ie }}
+subjects:
+  - {kind: ServiceAccount, name: {{ .Release.Name }}, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ .Release.Name }}-endpoints}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-vip-reader
+rules:
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [gateways]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-vip-reader
+subjects:
+  - {kind: ServiceAccount, name: {{ .Release.Name }}, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ .Release.Name }}-vip-reader}

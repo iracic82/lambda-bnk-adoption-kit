@@ -1,0 +1,11 @@
+apiVersion: v2
+name: bnk-inference-adapter
+description: >-
+  Lambda-style Inference Gateway API backed by F5 BIG-IP Next for Kubernetes 2.4. Creates Gateway,
+  HTTPRoute, InferencePool + F5EPP and composite iRule objects per inference endpoint.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+annotations:
+  licenses: Apache-2.0   # Chart.yaml has no license field; this is the Artifact Hub annotation
+keywords: [f5, bnk, inference, gateway-api, gaie, lambda]
